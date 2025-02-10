@@ -1,5 +1,5 @@
 /*
-Copyright 2018 The Kubernetes Authors.
+Copyright 2025 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -23,18 +23,24 @@ import (
 	"strings"
 
 	"github.com/go-logr/logr"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/klog/v2"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
+	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
-	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
+
+	mccontroller "github.com/multicluster-runtime/multicluster-runtime/pkg/controller"
+	mcmanager "github.com/multicluster-runtime/multicluster-runtime/pkg/manager"
+	mcreconcile "github.com/multicluster-runtime/multicluster-runtime/pkg/reconcile"
+	mcsource "github.com/multicluster-runtime/multicluster-runtime/pkg/source"
 )
 
 // project represents other forms that we can use to
@@ -49,7 +55,7 @@ const (
 )
 
 // Builder builds a Controller.
-type Builder = TypedBuilder[reconcile.Request]
+type Builder = TypedBuilder[mcreconcile.Request]
 
 // TypedBuilder builds a Controller. The request is the request type
 // that is passed to the workqueue and then to the Reconciler.
@@ -59,21 +65,21 @@ type TypedBuilder[request comparable] struct {
 	ownsInput        []OwnsInput
 	rawSources       []source.TypedSource[request]
 	watchesInput     []WatchesInput[request]
-	mgr              manager.Manager
+	mgr              mcmanager.Manager
 	globalPredicates []predicate.Predicate
-	ctrl             controller.TypedController[request]
+	ctrl             mccontroller.TypedController[request]
 	ctrlOptions      controller.TypedOptions[request]
 	name             string
-	newController    func(name string, mgr manager.Manager, options controller.TypedOptions[request]) (controller.TypedController[request], error)
+	newController    func(name string, mgr mcmanager.Manager, options controller.TypedOptions[request]) (mccontroller.TypedController[request], error)
 }
 
 // ControllerManagedBy returns a new controller builder that will be started by the provided Manager.
-func ControllerManagedBy(m manager.Manager) *Builder {
-	return TypedControllerManagedBy[reconcile.Request](m)
+func ControllerManagedBy(m mcmanager.Manager) *Builder {
+	return TypedControllerManagedBy[mcreconcile.Request](m)
 }
 
 // TypedControllerManagedBy returns a new typed controller builder that will be started by the provided Manager.
-func TypedControllerManagedBy[request comparable](m manager.Manager) *TypedBuilder[request] {
+func TypedControllerManagedBy[request comparable](m mcmanager.Manager) *TypedBuilder[request] {
 	return &TypedBuilder[request]{mgr: m}
 }
 
@@ -138,7 +144,7 @@ type untypedWatchesInput interface {
 // WatchesInput represents the information set by Watches method.
 type WatchesInput[request comparable] struct {
 	obj              client.Object
-	handler          handler.TypedEventHandler[client.Object, request]
+	handler          func(cluster.Cluster) handler.TypedEventHandler[client.Object, request]
 	predicates       []predicate.Predicate
 	objectProjection objectProjection
 }
@@ -151,6 +157,13 @@ func (w *WatchesInput[request]) setObjectProjection(objectProjection objectProje
 	w.objectProjection = objectProjection
 }
 
+// StaticHandler returns a handler constructor with a static value.
+func StaticHandler[object client.Object, request comparable](h handler.TypedEventHandler[object, request]) func(cluster.Cluster) handler.TypedEventHandler[object, request] {
+	return func(cl cluster.Cluster) handler.TypedEventHandler[object, request] {
+		return h
+	}
+}
+
 // Watches defines the type of Object to watch, and configures the ControllerManagedBy to respond to create / delete /
 // update events by *reconciling the object* with the given EventHandler.
 //
@@ -158,12 +171,15 @@ func (w *WatchesInput[request]) setObjectProjection(objectProjection objectProje
 // WatchesRawSource(source.Kind(cache, object, eventHandler, predicates...)).
 func (blder *TypedBuilder[request]) Watches(
 	object client.Object,
-	eventHandler handler.TypedEventHandler[client.Object, request],
+	eventHandler func(cluster.Cluster) handler.TypedEventHandler[client.Object, request],
 	opts ...WatchesOption,
 ) *TypedBuilder[request] {
 	input := WatchesInput[request]{
-		obj:     object,
-		handler: handler.WithLowPriorityWhenUnchanged(eventHandler),
+		obj: object,
+		handler: func(cl cluster.Cluster) handler.TypedEventHandler[client.Object, request] {
+			hdlr := eventHandler(cl)
+			return handler.WithLowPriorityWhenUnchanged(hdlr)
+		},
 	}
 	for _, opt := range opts {
 		opt.ApplyToWatches(&input)
@@ -203,7 +219,7 @@ func (blder *TypedBuilder[request]) Watches(
 // consumption and leads to race conditions as caches are not in sync.
 func (blder *TypedBuilder[request]) WatchesMetadata(
 	object client.Object,
-	eventHandler handler.TypedEventHandler[client.Object, request],
+	eventHandler func(cluster.Cluster) handler.TypedEventHandler[client.Object, request],
 	opts ...WatchesOption,
 ) *TypedBuilder[request] {
 	opts = append(opts, OnlyMetadata)
@@ -263,7 +279,7 @@ func (blder *TypedBuilder[request]) Complete(r reconcile.TypedReconciler[request
 }
 
 // Build builds the Application Controller and returns the Controller it created.
-func (blder *TypedBuilder[request]) Build(r reconcile.TypedReconciler[request]) (controller.TypedController[request], error) {
+func (blder *TypedBuilder[request]) Build(r reconcile.TypedReconciler[request]) (mccontroller.TypedController[request], error) {
 	if r == nil {
 		return nil, fmt.Errorf("must provide a non-nil Reconciler")
 	}
@@ -287,41 +303,42 @@ func (blder *TypedBuilder[request]) Build(r reconcile.TypedReconciler[request]) 
 	return blder.ctrl, nil
 }
 
-func (blder *TypedBuilder[request]) project(obj client.Object, proj objectProjection) (client.Object, error) {
-	switch proj {
-	case projectAsNormal:
-		return obj, nil
-	case projectAsMetadata:
-		metaObj := &metav1.PartialObjectMetadata{}
-		gvk, err := apiutil.GVKForObject(obj, blder.mgr.GetScheme())
-		if err != nil {
-			return nil, fmt.Errorf("unable to determine GVK of %T for a metadata-only watch: %w", obj, err)
+func (blder *TypedBuilder[request]) project(proj objectProjection) func(cluster.Cluster, client.Object) (client.Object, error) {
+	return func(cl cluster.Cluster, obj client.Object) (client.Object, error) {
+		switch proj {
+		case projectAsNormal:
+			return obj, nil
+		case projectAsMetadata:
+			metaObj := &metav1.PartialObjectMetadata{}
+			gvk, err := apiutil.GVKForObject(obj, cl.GetScheme())
+			if err != nil {
+				return nil, fmt.Errorf("unable to determine GVK of %T for a metadata-only watch: %w", obj, err)
+			}
+			metaObj.SetGroupVersionKind(gvk)
+			return metaObj, nil
+		default:
+			panic(fmt.Sprintf("unexpected projection type %v on type %T, should not be possible since this is an internal field", proj, obj))
 		}
-		metaObj.SetGroupVersionKind(gvk)
-		return metaObj, nil
-	default:
-		panic(fmt.Sprintf("unexpected projection type %v on type %T, should not be possible since this is an internal field", proj, obj))
 	}
 }
 
 func (blder *TypedBuilder[request]) doWatch() error {
 	// Reconcile type
 	if blder.forInput.object != nil {
-		obj, err := blder.project(blder.forInput.object, blder.forInput.objectProjection)
-		if err != nil {
-			return err
-		}
-
 		if reflect.TypeFor[request]() != reflect.TypeOf(reconcile.Request{}) {
 			return fmt.Errorf("For() can only be used with reconcile.Request, got %T", *new(request))
 		}
 
-		var hdler handler.TypedEventHandler[client.Object, request]
-		reflect.ValueOf(&hdler).Elem().Set(reflect.ValueOf(handler.WithLowPriorityWhenUnchanged(&handler.EnqueueRequestForObject{})))
+		newHdler := func(cl cluster.Cluster) handler.TypedEventHandler[client.Object, request] {
+			var hdler handler.TypedEventHandler[client.Object, request]
+			reflect.ValueOf(&hdler).Elem().Set(reflect.ValueOf(handler.WithLowPriorityWhenUnchanged(&handler.EnqueueRequestForObject{})))
+			return hdler
+		}
 		allPredicates := append([]predicate.Predicate(nil), blder.globalPredicates...)
 		allPredicates = append(allPredicates, blder.forInput.predicates...)
-		src := source.TypedKind(blder.mgr.GetCache(), obj, hdler, allPredicates...)
-		if err := blder.ctrl.Watch(src); err != nil {
+		src := mcsource.TypedKind[client.Object, request](blder.forInput.object, newHdler, allPredicates...).
+			WithProjection(blder.project(blder.forInput.objectProjection))
+		if err := blder.ctrl.MultiClusterWatch(src); err != nil {
 			return err
 		}
 	}
@@ -331,25 +348,25 @@ func (blder *TypedBuilder[request]) doWatch() error {
 		return errors.New("Owns() can only be used together with For()")
 	}
 	for _, own := range blder.ownsInput {
-		obj, err := blder.project(own.object, own.objectProjection)
-		if err != nil {
-			return err
-		}
 		opts := []handler.OwnerOption{}
 		if !own.matchEveryOwner {
 			opts = append(opts, handler.OnlyControllerOwner())
 		}
 
-		var hdler handler.TypedEventHandler[client.Object, request]
-		reflect.ValueOf(&hdler).Elem().Set(reflect.ValueOf(handler.WithLowPriorityWhenUnchanged(handler.EnqueueRequestForOwner(
-			blder.mgr.GetScheme(), blder.mgr.GetRESTMapper(),
-			blder.forInput.object,
-			opts...,
-		))))
+		newHdler := func(cl cluster.Cluster) handler.TypedEventHandler[client.Object, request] {
+			var hdler handler.TypedEventHandler[client.Object, request]
+			reflect.ValueOf(&hdler).Elem().Set(reflect.ValueOf(handler.WithLowPriorityWhenUnchanged(handler.EnqueueRequestForOwner(
+				blder.mgr.GetHostManager().GetScheme(), cl.GetRESTMapper(),
+				blder.forInput.object,
+				opts...,
+			))))
+			return hdler
+		}
 		allPredicates := append([]predicate.Predicate(nil), blder.globalPredicates...)
 		allPredicates = append(allPredicates, own.predicates...)
-		src := source.TypedKind(blder.mgr.GetCache(), obj, hdler, allPredicates...)
-		if err := blder.ctrl.Watch(src); err != nil {
+		src := mcsource.TypedKind[client.Object, request](own.object, newHdler, allPredicates...).
+			WithProjection(blder.project(own.objectProjection))
+		if err := blder.ctrl.MultiClusterWatch(src); err != nil {
 			return err
 		}
 	}
@@ -359,13 +376,10 @@ func (blder *TypedBuilder[request]) doWatch() error {
 		return errors.New("there are no watches configured, controller will never get triggered. Use For(), Owns(), Watches() or WatchesRawSource() to set them up")
 	}
 	for _, w := range blder.watchesInput {
-		projected, err := blder.project(w.obj, w.objectProjection)
-		if err != nil {
-			return fmt.Errorf("failed to project for %T: %w", w.obj, err)
-		}
 		allPredicates := append([]predicate.Predicate(nil), blder.globalPredicates...)
 		allPredicates = append(allPredicates, w.predicates...)
-		if err := blder.ctrl.Watch(source.TypedKind(blder.mgr.GetCache(), projected, w.handler, allPredicates...)); err != nil {
+		src := mcsource.TypedKind(w.obj, w.handler, allPredicates...).WithProjection(blder.project(w.objectProjection))
+		if err := blder.ctrl.MultiClusterWatch(src); err != nil {
 			return err
 		}
 	}
@@ -404,7 +418,7 @@ func (blder *TypedBuilder[request]) doController(r reconcile.TypedReconciler[req
 	hasGVK := blder.forInput.object != nil
 	if hasGVK {
 		var err error
-		gvk, err = apiutil.GVKForObject(blder.forInput.object, blder.mgr.GetScheme())
+		gvk, err = apiutil.GVKForObject(blder.forInput.object, blder.mgr.GetHostManager().GetScheme())
 		if err != nil {
 			return err
 		}
@@ -457,7 +471,7 @@ func (blder *TypedBuilder[request]) doController(r reconcile.TypedReconciler[req
 	}
 
 	if blder.newController == nil {
-		blder.newController = controller.NewTyped[request]
+		blder.newController = mccontroller.NewTyped[request]
 	}
 
 	// Build the controller and return.
