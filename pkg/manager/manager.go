@@ -23,6 +23,8 @@ import (
 
 	"github.com/go-logr/logr"
 
+	mccontext "github.com/multicluster-runtime/multicluster-runtime/pkg/context"
+
 	"k8s.io/client-go/rest"
 
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
@@ -104,6 +106,9 @@ type Manager interface {
 	// an error should be returned.
 	GetCluster(ctx context.Context, clusterName string) (cluster.Cluster, error)
 
+	// ClusterFromContext returns the default cluster set in the context.
+	ClusterFromContext(ctx context.Context) (cluster.Cluster, error)
+
 	// GetLocalManager returns the underlying controller-runtime manager of the host.
 	GetLocalManager() manager.Manager
 
@@ -159,6 +164,15 @@ func (m *mcManager) GetCluster(ctx context.Context, clusterName string) (cluster
 		return nil, fmt.Errorf("no multicluster provider set, but cluster %q passed", clusterName)
 	}
 	return m.provider.Get(ctx, clusterName)
+}
+
+// ClusterFromContext returns the default cluster set in the context.
+func (m *mcManager) ClusterFromContext(ctx context.Context) (cluster.Cluster, error) {
+	clusterName, ok := mccontext.ClusterFrom(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no cluster set in context, use ReconcilerWithCluster helper when building the controller")
+	}
+	return m.GetCluster(ctx, clusterName)
 }
 
 // GetLocalManager returns the underlying controller-runtime manager of the host.

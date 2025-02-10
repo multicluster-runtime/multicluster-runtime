@@ -279,12 +279,18 @@ func (blder *TypedBuilder[request]) Named(name string) *TypedBuilder[request] {
 }
 
 // Complete builds the Application Controller.
+//
+// Note: use context.ReconcilerWithClusterInContext to inject the cluster name
+// into the and to use Manager.GetClusterInContext to retrieve the cluster.
 func (blder *TypedBuilder[request]) Complete(r reconcile.TypedReconciler[request]) error {
 	_, err := blder.Build(r)
 	return err
 }
 
 // Build builds the Application Controller and returns the Controller it created.
+//
+// Note: use context.ReconcilerWithClusterInContext to inject the cluster name
+// into the and to use Manager.GetClusterInContext to retrieve the cluster.
 func (blder *TypedBuilder[request]) Build(r reconcile.TypedReconciler[request]) (mccontroller.TypedController[request], error) {
 	if r == nil {
 		return nil, fmt.Errorf("must provide a non-nil Reconciler")

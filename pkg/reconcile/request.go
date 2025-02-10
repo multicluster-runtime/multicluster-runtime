@@ -21,6 +21,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
+// Reconciler is a type that implements the reconcile interface.
+type Reconciler = reconcile.TypedReconciler[Request]
+
 // Func is a function that implements the reconcile interface.
 type Func = reconcile.TypedFunc[Request]
 
