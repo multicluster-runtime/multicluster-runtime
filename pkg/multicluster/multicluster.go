@@ -39,14 +39,12 @@ type Aware interface {
 	//           |___         \
 	//               `--------'
 	Engage(context.Context, string, cluster.Cluster) error
-
-	// Disengage gets called when the component should stop operations for the given Cluster.
-	Disengage(context.Context, string) error
 }
 
 // Provider allows to retrieve clusters by name. The provider is responsible for discovering
-// and managing the lifecycle of each cluster, calling `Engage` and `Disengage` on the manager
-// it is run against whenever a new cluster is discovered or a cluster is unregistered.
+// and managing the lifecycle of each cluster, calling `Engage` on the manager
+// it is run against whenever a new cluster is discovered and cancelling the
+// context used on engage when a cluster is unregistered.
 //
 // Example: A Cluster API provider would be responsible for discovering and
 // managing clusters that are backed by Cluster API resources, which can live

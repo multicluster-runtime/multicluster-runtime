@@ -21,11 +21,11 @@ import (
 	"fmt"
 	"sync"
 
-	kerrors "k8s.io/apimachinery/pkg/util/errors"
-
+	"k8s.io/client-go/util/workqueue"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	mcmanager "github.com/multicluster-runtime/multicluster-runtime/pkg/manager"
 	"github.com/multicluster-runtime/multicluster-runtime/pkg/multicluster"
@@ -107,7 +107,6 @@ type mcController[request comparable] struct {
 type engagedCluster struct {
 	name    string
 	cluster cluster.Cluster
-	cancel  context.CancelFunc
 }
 
 func (c *mcController[request]) Engage(ctx context.Context, name string, cl cluster.Cluster) error {
@@ -118,40 +117,26 @@ func (c *mcController[request]) Engage(ctx context.Context, name string, cl clus
 		return nil
 	}
 
-	cancels := make([]func() error, 0, len(c.sources)+1)
-	disengage := func(err error) error {
-		var errs []error
-		for _, cancel := range cancels {
-			if err := cancel(); err != nil {
-				errs = append(errs, err)
-			}
-		}
-		return kerrors.NewAggregate(errs)
-	}
+	ctx, cancel := context.WithCancel(ctx)
 
 	// pass through in case the controller itself is cluster aware
 	if ctrl, ok := c.TypedController.(multicluster.Aware); ok {
 		if err := ctrl.Engage(ctx, name, cl); err != nil {
 			return err
 		}
-		cancels = append(cancels, func() error {
-			return ctrl.Disengage(ctx, name)
-		})
 	}
 
 	// engage cluster aware instances
 	for _, aware := range c.sources {
-		src, cancel, err := aware.Engage(cl)
+		src, err := aware.ForCluster(cl)
 		if err != nil {
-			return disengage(fmt.Errorf("failed to engage for cluster %q: %w", name, err))
-		}
-		if err := c.TypedController.Watch(src); err != nil {
-			return disengage(fmt.Errorf("failed to watch for cluster %q: %w", name, err))
-		}
-		cancels = append(cancels, func() error {
 			cancel()
-			return nil
-		})
+			return fmt.Errorf("failed to engage for cluster %q: %w", name, err)
+		}
+		if err := c.TypedController.Watch(startWithinContext[request](ctx, src)); err != nil {
+			cancel()
+			return fmt.Errorf("failed to watch for cluster %q: %w", name, err)
+		}
 	}
 
 	c.clusters[name] = engagedCluster{
@@ -162,56 +147,36 @@ func (c *mcController[request]) Engage(ctx context.Context, name string, cl clus
 	return nil
 }
 
-func (c *mcController[request]) Disengage(ctx context.Context, name string) error {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-
-	if _, ok := c.clusters[name]; !ok {
-		return nil
-	}
-	delete(c.clusters, name)
-
-	// pass through in case the controller itself is cluster aware
-	var errs []error
-	if ctrl, ok := c.TypedController.(multicluster.Aware); ok {
-		if err := ctrl.Disengage(ctx, name); err != nil {
-			errs = append(errs, err)
-		}
-	}
-
-	return kerrors.NewAggregate(errs)
-}
-
 func (c *mcController[request]) MultiClusterWatch(src mcsource.TypedSource[client.Object, request]) error {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
-	c.sources = append(c.sources, src)
-
-	cancels := make([]func() error, 0, len(c.sources)+1)
-	disengage := func(err error) error {
-		var errs []error
-		for _, cancel := range cancels {
-			if err := cancel(); err != nil {
-				errs = append(errs, err)
-			}
-		}
-		return kerrors.NewAggregate(errs)
-	}
+	ctx, cancel := context.WithCancel(context.Background())
 
 	for name, eng := range c.clusters {
-		src, cancel, err := src.Engage(eng.cluster)
+		src, err := src.ForCluster(eng.cluster)
 		if err != nil {
-			return disengage(fmt.Errorf("failed to engage for cluster %q: %w", name, err))
-		}
-		if err := c.TypedController.Watch(src); err != nil {
-			return disengage(fmt.Errorf("failed to watch for cluster %q: %w", name, err))
-		}
-		cancels = append(cancels, func() error {
 			cancel()
-			return nil
-		})
+			return fmt.Errorf("failed to engage for cluster %q: %w", name, err)
+		}
+		if err := c.TypedController.Watch(startWithinContext[request](ctx, src)); err != nil {
+			cancel()
+			return fmt.Errorf("failed to watch for cluster %q: %w", name, err)
+		}
 	}
 
+	c.sources = append(c.sources, src)
+
 	return nil
+}
+
+func startWithinContext[request comparable](ctx context.Context, src source.TypedSource[request]) source.TypedSource[request] {
+	return source.TypedFunc[request](func(ctlCtx context.Context, w workqueue.TypedRateLimitingInterface[request]) error {
+		ctx, cancel := context.WithCancel(ctx)
+		go func() {
+			<-ctlCtx.Done()
+			cancel()
+		}()
+		return src.Start(ctx, w)
+	})
 }

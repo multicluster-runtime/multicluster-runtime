@@ -18,11 +18,11 @@ package manager
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 
 	"github.com/go-logr/logr"
 
-	kerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/client-go/rest"
 
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
@@ -176,29 +176,15 @@ func (m *mcManager) Add(r Runnable) (err error) {
 	return m.Add(r)
 }
 
-// Engage gets called when the component should start operations for the given Cluster.
+// Engage gets called when the component should start operations for the given
+// Cluster. ctx is cancelled when the cluster is disengaged.
 func (m *mcManager) Engage(ctx context.Context, name string, cl cluster.Cluster) error {
-	for i, r := range m.mcRunnables {
+	ctx, cancel := context.WithCancel(ctx)
+	for _, r := range m.mcRunnables {
 		if err := r.Engage(ctx, name, cl); err != nil {
-			errs := []error{err}
-			for j := 0; j < i; j++ {
-				if err := m.mcRunnables[j].Disengage(ctx, name); err != nil {
-					errs = append(errs, err)
-				}
-			}
-			return kerrors.NewAggregate(errs)
+			cancel()
+			return fmt.Errorf("failed to engage cluster %q: %w", name, err)
 		}
 	}
 	return nil
-}
-
-// Disengage gets called when the component should stop operations for the given Cluster.
-func (m *mcManager) Disengage(ctx context.Context, name string) error {
-	var errs []error
-	for _, r := range m.mcRunnables {
-		if err := r.Disengage(ctx, name); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	return kerrors.NewAggregate(errs)
 }

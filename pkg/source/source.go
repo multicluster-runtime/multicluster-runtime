@@ -17,10 +17,6 @@ limitations under the License.
 package source
 
 import (
-	"context"
-
-	"k8s.io/client-go/util/workqueue"
-
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -40,9 +36,6 @@ import (
 // Users may build their own Source implementations.
 type Source = TypedSource[client.Object, mcreconcile.Request]
 
-// CancelFunc is a function that can be called to cancel the source.
-type CancelFunc = func()
-
 // TypedSource is a generic source of events (e.g. Create, Update, Delete operations on Kubernetes Objects, Webhook callbacks, etc)
 // which should be processed by event.EventHandlers to enqueue a request.
 //
@@ -52,7 +45,7 @@ type CancelFunc = func()
 //
 // Users may build their own Source implementations.
 type TypedSource[object client.Object, request comparable] interface {
-	Engage(cluster.Cluster) (source.TypedSource[request], CancelFunc, error)
+	ForCluster(cluster.Cluster) (source.TypedSource[request], error)
 }
 
 // SyncingSource is a source that needs syncing prior to being usable. The controller
@@ -63,7 +56,7 @@ type SyncingSource[object client.Object] TypedSyncingSource[object, mcreconcile.
 // will call its WaitForSync prior to starting workers.
 type TypedSyncingSource[object client.Object, request comparable] interface {
 	TypedSource[object, request]
-	SyncingEngage(cluster.Cluster) (source.TypedSyncingSource[request], CancelFunc, error)
+	SyncingForCluster(cluster.Cluster) (source.TypedSyncingSource[request], error)
 	WithProjection(func(cluster.Cluster, object) (object, error)) TypedSyncingSource[object, request]
 }
 
@@ -97,9 +90,8 @@ type kind[object client.Object, request comparable] struct {
 	project    func(cluster.Cluster, object) (object, error)
 }
 
-type engagedKind[object client.Object, request comparable] struct {
+type clusterKind[object client.Object, request comparable] struct {
 	source.TypedSyncingSource[request]
-	done chan struct{}
 }
 
 // WithProjection sets the projection function for the KindSource.
@@ -108,44 +100,22 @@ func (k *kind[object, request]) WithProjection(project func(cluster.Cluster, obj
 	return k
 }
 
-func (k *kind[object, request]) Engage(cl cluster.Cluster) (source.TypedSource[request], CancelFunc, error) {
+func (k *kind[object, request]) ForCluster(cl cluster.Cluster) (source.TypedSource[request], error) {
 	obj, err := k.project(cl, k.obj)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	stopCh := make(chan struct{})
-	return &engagedKind[object, request]{
+	return &clusterKind[object, request]{
 		TypedSyncingSource: source.TypedKind(cl.GetCache(), obj, k.handler(cl), k.predicates...),
-		done:               stopCh,
-	}, func() { close(stopCh) }, nil
+	}, nil
 }
 
-func (k *kind[object, request]) SyncingEngage(cl cluster.Cluster) (source.TypedSyncingSource[request], CancelFunc, error) {
+func (k *kind[object, request]) SyncingForCluster(cl cluster.Cluster) (source.TypedSyncingSource[request], error) {
 	obj, err := k.project(cl, k.obj)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	stopCh := make(chan struct{})
-	return &engagedKind[object, request]{
+	return &clusterKind[object, request]{
 		TypedSyncingSource: source.TypedKind(cl.GetCache(), obj, k.handler(cl), k.predicates...),
-		done:               stopCh,
-	}, func() { close(stopCh) }, nil
-}
-
-func (k *engagedKind[object, request]) Start(ctx context.Context, q workqueue.TypedRateLimitingInterface[request]) error {
-	ctx, cancel := context.WithCancel(ctx)
-	go func() {
-		<-ctx.Done()
-		cancel()
-	}()
-	return k.TypedSyncingSource.Start(ctx, q)
-}
-
-func (k *engagedKind[object, request]) WaitForSync(ctx context.Context) error {
-	ctx, cancel := context.WithCancel(ctx)
-	go func() {
-		<-ctx.Done()
-		cancel()
-	}()
-	return k.TypedSyncingSource.WaitForSync(ctx)
+	}, nil
 }

@@ -24,8 +24,9 @@ import (
 	"sync"
 
 	"github.com/go-logr/logr"
-	mcbuilder "github.com/multicluster-runtime/multicluster-runtime/pkg/builder"
 	"golang.org/x/sync/errgroup"
+
+	mcbuilder "github.com/multicluster-runtime/multicluster-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	mcmanager "github.com/multicluster-runtime/multicluster-runtime/pkg/manager"
@@ -36,7 +37,6 @@ import (
 	toolscache "k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/builder"
 	cache "sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
