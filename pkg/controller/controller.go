@@ -128,7 +128,7 @@ func (c *mcController[request]) Engage(ctx context.Context, name string, cl clus
 
 	// engage cluster aware instances
 	for _, aware := range c.sources {
-		src, err := aware.ForCluster(cl)
+		src, err := aware.ForCluster(name, cl)
 		if err != nil {
 			cancel()
 			return fmt.Errorf("failed to engage for cluster %q: %w", name, err)
@@ -154,7 +154,7 @@ func (c *mcController[request]) MultiClusterWatch(src mcsource.TypedSource[clien
 	ctx, cancel := context.WithCancel(context.Background())
 
 	for name, eng := range c.clusters {
-		src, err := src.ForCluster(eng.cluster)
+		src, err := src.ForCluster(name, eng.cluster)
 		if err != nil {
 			cancel()
 			return fmt.Errorf("failed to engage for cluster %q: %w", name, err)

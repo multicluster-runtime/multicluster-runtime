@@ -23,7 +23,6 @@ import (
 	"strings"
 
 	"github.com/go-logr/logr"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/klog/v2"
@@ -60,7 +59,7 @@ type Builder = TypedBuilder[mcreconcile.Request]
 // TypedBuilder builds a Controller. The request is the request type
 // that is passed to the workqueue and then to the Reconciler.
 // The workqueue de-duplicates identical requests.
-type TypedBuilder[request comparable] struct {
+type TypedBuilder[request mcreconcile.ClusterAware[request]] struct {
 	forInput         ForInput
 	ownsInput        []OwnsInput
 	rawSources       []source.TypedSource[request]
@@ -79,7 +78,7 @@ func ControllerManagedBy(m mcmanager.Manager) *Builder {
 }
 
 // TypedControllerManagedBy returns a new typed controller builder that will be started by the provided Manager.
-func TypedControllerManagedBy[request comparable](m mcmanager.Manager) *TypedBuilder[request] {
+func TypedControllerManagedBy[request mcreconcile.ClusterAware[request]](m mcmanager.Manager) *TypedBuilder[request] {
 	return &TypedBuilder[request]{mgr: m}
 }
 
@@ -141,10 +140,14 @@ type untypedWatchesInput interface {
 	setObjectProjection(objectProjection)
 }
 
+// NewTypedEventHandlerFunc is a constructor for a TypedEventHandler that uses
+// a given cluster.
+type NewTypedEventHandlerFunc[request mcreconcile.ClusterAware[request]] func(string, cluster.Cluster) handler.TypedEventHandler[client.Object, request]
+
 // WatchesInput represents the information set by Watches method.
-type WatchesInput[request comparable] struct {
+type WatchesInput[request mcreconcile.ClusterAware[request]] struct {
 	obj              client.Object
-	handler          func(cluster.Cluster) handler.TypedEventHandler[client.Object, request]
+	handler          NewTypedEventHandlerFunc[request]
 	predicates       []predicate.Predicate
 	objectProjection objectProjection
 }
@@ -171,13 +174,13 @@ func StaticHandler[object client.Object, request comparable](h handler.TypedEven
 // WatchesRawSource(source.Kind(cache, object, eventHandler, predicates...)).
 func (blder *TypedBuilder[request]) Watches(
 	object client.Object,
-	eventHandler func(cluster.Cluster) handler.TypedEventHandler[client.Object, request],
+	eventHandler NewTypedEventHandlerFunc[request],
 	opts ...WatchesOption,
 ) *TypedBuilder[request] {
 	input := WatchesInput[request]{
 		obj: object,
-		handler: func(cl cluster.Cluster) handler.TypedEventHandler[client.Object, request] {
-			hdlr := eventHandler(cl)
+		handler: func(name string, cl cluster.Cluster) handler.TypedEventHandler[client.Object, request] {
+			hdlr := handlerWithCluster[client.Object, request](name, eventHandler(name, cl))
 			return handler.WithLowPriorityWhenUnchanged(hdlr)
 		},
 	}
@@ -219,7 +222,7 @@ func (blder *TypedBuilder[request]) Watches(
 // consumption and leads to race conditions as caches are not in sync.
 func (blder *TypedBuilder[request]) WatchesMetadata(
 	object client.Object,
-	eventHandler func(cluster.Cluster) handler.TypedEventHandler[client.Object, request],
+	eventHandler NewTypedEventHandlerFunc[request],
 	opts ...WatchesOption,
 ) *TypedBuilder[request] {
 	opts = append(opts, OnlyMetadata)
@@ -329,7 +332,7 @@ func (blder *TypedBuilder[request]) doWatch() error {
 			return fmt.Errorf("For() can only be used with reconcile.Request, got %T", *new(request))
 		}
 
-		newHdler := func(cl cluster.Cluster) handler.TypedEventHandler[client.Object, request] {
+		newHdler := func(_ string, _ cluster.Cluster) handler.TypedEventHandler[client.Object, request] {
 			var hdler handler.TypedEventHandler[client.Object, request]
 			reflect.ValueOf(&hdler).Elem().Set(reflect.ValueOf(handler.WithLowPriorityWhenUnchanged(&handler.EnqueueRequestForObject{})))
 			return hdler
@@ -353,7 +356,7 @@ func (blder *TypedBuilder[request]) doWatch() error {
 			opts = append(opts, handler.OnlyControllerOwner())
 		}
 
-		newHdler := func(cl cluster.Cluster) handler.TypedEventHandler[client.Object, request] {
+		newHdler := func(_ string, cl cluster.Cluster) handler.TypedEventHandler[client.Object, request] {
 			var hdler handler.TypedEventHandler[client.Object, request]
 			reflect.ValueOf(&hdler).Elem().Set(reflect.ValueOf(handler.WithLowPriorityWhenUnchanged(handler.EnqueueRequestForOwner(
 				blder.mgr.GetHostManager().GetScheme(), cl.GetRESTMapper(),

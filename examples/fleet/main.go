@@ -29,6 +29,7 @@ import (
 	mcbuilder "github.com/multicluster-runtime/multicluster-runtime/pkg/builder"
 	mcmanager "github.com/multicluster-runtime/multicluster-runtime/pkg/manager"
 	"github.com/multicluster-runtime/multicluster-runtime/pkg/multicluster"
+	mcreconcile "github.com/multicluster-runtime/multicluster-runtime/pkg/reconile"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -80,11 +81,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := mcbuilder.TypedControllerManagedBy[clusterRequest](mgr).
+	if err := mcbuilder.ControllerManagedBy(mgr).
 		Named("fleet-pod-controller").
-		Watches(&corev1.Pod{}, mcbuilder.StaticHandler(&EnqueueClusterRequestForObject{})).
-		Complete(reconcile.TypedFunc[clusterRequest](
-			func(ctx context.Context, req clusterRequest) (ctrl.Result, error) {
+		For(&corev1.Pod{}).
+		Complete(mcreconcile.Func(
+			func(ctx context.Context, req mcreconcile.Request) (ctrl.Result, error) {
 				log := log.FromContext(ctx).WithValues("cluster", req.ClusterName)
 
 				cl, err := mgr.GetCluster(ctx, req.ClusterName)
@@ -252,13 +253,6 @@ func (k *KindClusterProvider) Run(ctx context.Context, mgr mcmanager.Manager) er
 		k.lock.Unlock()
 		for _, name := range clusterNames {
 			if !kindNames.Has(name) {
-				// disengage manager
-				if mgr != nil {
-					if err := mgr.Disengage(ctx, name); err != nil {
-						k.log.Error(err, "failed to disengage manager")
-					}
-				}
-
 				// stop and forget
 				k.lock.Lock()
 				k.cancelFns[name]()

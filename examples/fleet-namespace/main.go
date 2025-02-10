@@ -26,6 +26,8 @@ import (
 	"github.com/go-logr/logr"
 	"golang.org/x/sync/errgroup"
 
+	mcreconcile "github.com/multicluster-runtime/multicluster-runtime/pkg/reconcile"
+
 	mcbuilder "github.com/multicluster-runtime/multicluster-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
@@ -121,11 +123,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := mcbuilder.TypedControllerManagedBy[clusterRequest](mgr).
+	if err := mcbuilder.ControllerManagedBy(mgr).
 		Named("fleet-ns-configmap-controller").
-		Watches(&corev1.ConfigMap{}, mcbuilder.StaticHandler(&EnqueueClusterRequestForObject{})).
-		Complete(reconcile.TypedFunc[clusterRequest](
-			func(ctx context.Context, req clusterRequest) (ctrl.Result, error) {
+		For(&corev1.ConfigMap{}).
+		Complete(mcreconcile.Func(
+			func(ctx context.Context, req mcreconcile.Request) (ctrl.Result, error) {
 				log := log.FromContext(ctx).WithValues("cluster", req.ClusterName)
 
 				cl, err := mgr.GetCluster(ctx, req.ClusterName)
@@ -237,15 +239,14 @@ func (p *NamespacedClusterProvider) Start(ctx context.Context, mgr mcmanager.Man
 			ns := obj.(*corev1.Namespace)
 
 			p.lock.RLock()
-			if _, ok := p.clusters[ns.Name]; !ok {
+			cancel, ok := p.cancelFns[ns.Name]
+			if !ok {
 				p.lock.RUnlock()
 				return
 			}
 			p.lock.RUnlock()
 
-			if err := mgr.Disengage(ctx, ns.Name); err != nil {
-				runtime.HandleError(fmt.Errorf("failed to disengage manager with cluster %q: %w", ns.Name, err))
-			}
+			cancel()
 
 			// stop and forget
 			p.lock.Lock()

@@ -17,8 +17,12 @@ limitations under the License.
 package reconcile
 
 import (
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
+
+// Func is a function that implements the reconcile interface.
+type Func = reconcile.TypedFunc[Request]
 
 // Request contains the information necessary to reconcile a Kubernetes object.  This includes the
 // information to uniquely identify the object - its Name and Namespace.  It does NOT contain information about
@@ -26,6 +30,35 @@ import (
 type Request struct {
 	reconcile.Request
 
-	// Cluster is the name of the cluster that the request belongs to.
-	Cluster string
+	// ClusterName is the name of the cluster that the request belongs to.
+	ClusterName string
+}
+
+// ClusterAware is an interface for cluster-aware requests.
+type ClusterAware[T any] interface {
+	comparable
+
+	// Cluster returns the name of the cluster that the request belongs to.
+	Cluster() string
+	// WithCluster sets the name of the cluster that the request belongs to.
+	WithCluster(string) T
+}
+
+// String returns the general purpose string representation.
+func (r Request) String() string {
+	if r.ClusterName == "" {
+		return r.Request.String()
+	}
+	return "cluster://" + r.ClusterName + string(types.Separator) + r.Request.String()
+}
+
+// Cluster returns the name of the cluster that the request belongs to.
+func (r Request) Cluster() string {
+	return r.ClusterName
+}
+
+// WithCluster sets the name of the cluster that the request belongs to.
+func (r Request) WithCluster(name string) Request {
+	r.ClusterName = name
+	return r
 }
