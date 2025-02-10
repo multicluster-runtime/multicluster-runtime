@@ -23,9 +23,11 @@ import (
 	"strings"
 
 	"github.com/go-logr/logr"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
@@ -88,6 +90,8 @@ type ForInput struct {
 	predicates       []predicate.Predicate
 	objectProjection objectProjection
 	err              error
+
+	EngageOptions
 }
 
 // For defines the type of Object being *reconciled*, and configures the ControllerManagedBy to respond to create / delete /
@@ -115,6 +119,8 @@ type OwnsInput struct {
 	object           client.Object
 	predicates       []predicate.Predicate
 	objectProjection objectProjection
+
+	EngageOptions
 }
 
 // Owns defines types of Objects being *generated* by the ControllerManagedBy, and configures the ControllerManagedBy to respond to
@@ -138,6 +144,8 @@ func (blder *TypedBuilder[request]) Owns(object client.Object, opts ...OwnsOptio
 type untypedWatchesInput interface {
 	setPredicates([]predicate.Predicate)
 	setObjectProjection(objectProjection)
+	setEngageWithLocalCluster(engage bool)
+	setEngageWithProviderClusters(engage bool)
 }
 
 // NewTypedEventHandlerFunc is a constructor for a TypedEventHandler that uses
@@ -150,6 +158,8 @@ type WatchesInput[request mcreconcile.ClusterAware[request]] struct {
 	handler          NewTypedEventHandlerFunc[request]
 	predicates       []predicate.Predicate
 	objectProjection objectProjection
+
+	EngageOptions
 }
 
 func (w *WatchesInput[request]) setPredicates(predicates []predicate.Predicate) {
@@ -158,13 +168,6 @@ func (w *WatchesInput[request]) setPredicates(predicates []predicate.Predicate) 
 
 func (w *WatchesInput[request]) setObjectProjection(objectProjection objectProjection) {
 	w.objectProjection = objectProjection
-}
-
-// StaticHandler returns a handler constructor with a static value.
-func StaticHandler[object client.Object, request comparable](h handler.TypedEventHandler[object, request]) func(cluster.Cluster) handler.TypedEventHandler[object, request] {
-	return func(cl cluster.Cluster) handler.TypedEventHandler[object, request] {
-		return h
-	}
 }
 
 // Watches defines the type of Object to watch, and configures the ControllerManagedBy to respond to create / delete /
@@ -339,10 +342,22 @@ func (blder *TypedBuilder[request]) doWatch() error {
 		}
 		allPredicates := append([]predicate.Predicate(nil), blder.globalPredicates...)
 		allPredicates = append(allPredicates, blder.forInput.predicates...)
+
 		src := mcsource.TypedKind[client.Object, request](blder.forInput.object, newHdler, allPredicates...).
 			WithProjection(blder.project(blder.forInput.objectProjection))
-		if err := blder.ctrl.MultiClusterWatch(src); err != nil {
-			return err
+		if ptr.Deref(blder.forInput.engageWithLocalCluster, blder.mgr.GetProvider() == nil) {
+			src, err := src.ForCluster("", blder.mgr.GetLocalManager())
+			if err != nil {
+				return err
+			}
+			if err := blder.ctrl.Watch(src); err != nil {
+				return err
+			}
+		}
+		if ptr.Deref(blder.forInput.engageWithProviderClusters, blder.mgr.GetProvider() != nil) {
+			if err := blder.ctrl.MultiClusterWatch(src); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -369,8 +384,19 @@ func (blder *TypedBuilder[request]) doWatch() error {
 		allPredicates = append(allPredicates, own.predicates...)
 		src := mcsource.TypedKind[client.Object, request](own.object, newHdler, allPredicates...).
 			WithProjection(blder.project(own.objectProjection))
-		if err := blder.ctrl.MultiClusterWatch(src); err != nil {
-			return err
+		if ptr.Deref(own.engageWithLocalCluster, blder.mgr.GetProvider() == nil) {
+			src, err := src.ForCluster("", blder.mgr.GetLocalManager())
+			if err != nil {
+				return err
+			}
+			if err := blder.ctrl.Watch(src); err != nil {
+				return err
+			}
+		}
+		if ptr.Deref(own.engageWithProviderClusters, blder.mgr.GetProvider() != nil) {
+			if err := blder.ctrl.MultiClusterWatch(src); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -382,8 +408,19 @@ func (blder *TypedBuilder[request]) doWatch() error {
 		allPredicates := append([]predicate.Predicate(nil), blder.globalPredicates...)
 		allPredicates = append(allPredicates, w.predicates...)
 		src := mcsource.TypedKind(w.obj, w.handler, allPredicates...).WithProjection(blder.project(w.objectProjection))
-		if err := blder.ctrl.MultiClusterWatch(src); err != nil {
-			return err
+		if ptr.Deref(w.engageWithLocalCluster, blder.mgr.GetProvider() == nil) {
+			src, err := src.ForCluster("", blder.mgr.GetLocalManager())
+			if err != nil {
+				return err
+			}
+			if err := blder.ctrl.Watch(src); err != nil {
+				return err
+			}
+		}
+		if ptr.Deref(w.engageWithProviderClusters, blder.mgr.GetProvider() != nil) {
+			if err := blder.ctrl.MultiClusterWatch(src); err != nil {
+				return err
+			}
 		}
 	}
 	for _, src := range blder.rawSources {

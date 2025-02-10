@@ -22,9 +22,18 @@ import (
 
 	mcreconcile "github.com/multicluster-runtime/multicluster-runtime/pkg/reconcile"
 	"k8s.io/client-go/util/workqueue"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 )
+
+// StaticHandler returns a handler constructor with a static value.
+func StaticHandler[object client.Object, request comparable](h handler.TypedEventHandler[object, request]) func(cluster.Cluster) handler.TypedEventHandler[object, request] {
+	return func(cl cluster.Cluster) handler.TypedEventHandler[object, request] {
+		return h
+	}
+}
 
 // handlerWithCluster wraps a handler and injects the cluster name into the
 // reuqests that are enqueued.

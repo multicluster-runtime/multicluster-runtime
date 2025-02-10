@@ -107,6 +107,9 @@ type Manager interface {
 	// GetLocalManager returns the underlying controller-runtime manager of the host.
 	GetLocalManager() manager.Manager
 
+	// GetProvider returns the multicluster provider, or nil if it is not set.
+	GetProvider() multicluster.Provider
+
 	multicluster.Aware
 }
 
@@ -161,6 +164,11 @@ func (m *mcManager) GetCluster(ctx context.Context, clusterName string) (cluster
 // GetLocalManager returns the underlying controller-runtime manager of the host.
 func (m *mcManager) GetLocalManager() manager.Manager {
 	return m.Manager
+}
+
+// GetProvider returns the multicluster provider, or nil if it is not set.
+func (m *mcManager) GetProvider() multicluster.Provider {
+	return m.provider
 }
 
 // Add will set requested dependencies on the component, and cause the component to be
