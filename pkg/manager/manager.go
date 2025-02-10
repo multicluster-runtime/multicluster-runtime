@@ -104,8 +104,8 @@ type Manager interface {
 	// an error should be returned.
 	GetCluster(ctx context.Context, clusterName string) (cluster.Cluster, error)
 
-	// GetHostManager returns the underlying controller-runtime manager of the host.
-	GetHostManager() manager.Manager
+	// GetLocalManager returns the underlying controller-runtime manager of the host.
+	GetLocalManager() manager.Manager
 
 	multicluster.Aware
 }
@@ -158,8 +158,8 @@ func (m *mcManager) GetCluster(ctx context.Context, clusterName string) (cluster
 	return m.provider.Get(ctx, clusterName)
 }
 
-// GetHostManager returns the underlying controller-runtime manager of the host.
-func (m *mcManager) GetHostManager() manager.Manager {
+// GetLocalManager returns the underlying controller-runtime manager of the host.
+func (m *mcManager) GetLocalManager() manager.Manager {
 	return m.Manager
 }
 

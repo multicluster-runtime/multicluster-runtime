@@ -359,7 +359,7 @@ func (blder *TypedBuilder[request]) doWatch() error {
 		newHdler := func(_ string, cl cluster.Cluster) handler.TypedEventHandler[client.Object, request] {
 			var hdler handler.TypedEventHandler[client.Object, request]
 			reflect.ValueOf(&hdler).Elem().Set(reflect.ValueOf(handler.WithLowPriorityWhenUnchanged(handler.EnqueueRequestForOwner(
-				blder.mgr.GetHostManager().GetScheme(), cl.GetRESTMapper(),
+				blder.mgr.GetLocalManager().GetScheme(), cl.GetRESTMapper(),
 				blder.forInput.object,
 				opts...,
 			))))
@@ -421,7 +421,7 @@ func (blder *TypedBuilder[request]) doController(r reconcile.TypedReconciler[req
 	hasGVK := blder.forInput.object != nil
 	if hasGVK {
 		var err error
-		gvk, err = apiutil.GVKForObject(blder.forInput.object, blder.mgr.GetHostManager().GetScheme())
+		gvk, err = apiutil.GVKForObject(blder.forInput.object, blder.mgr.GetLocalManager().GetScheme())
 		if err != nil {
 			return err
 		}
