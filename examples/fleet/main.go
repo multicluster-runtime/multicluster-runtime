@@ -29,7 +29,7 @@ import (
 	mcbuilder "github.com/multicluster-runtime/multicluster-runtime/pkg/builder"
 	mcmanager "github.com/multicluster-runtime/multicluster-runtime/pkg/manager"
 	"github.com/multicluster-runtime/multicluster-runtime/pkg/multicluster"
-	mcreconcile "github.com/multicluster-runtime/multicluster-runtime/pkg/reconile"
+	mcreconcile "github.com/multicluster-runtime/multicluster-runtime/pkg/reconcile"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/sets"

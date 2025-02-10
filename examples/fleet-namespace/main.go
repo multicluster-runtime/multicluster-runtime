@@ -22,24 +22,25 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/go-logr/logr"
 	"golang.org/x/sync/errgroup"
 
-	mcreconcile "github.com/multicluster-runtime/multicluster-runtime/pkg/reconcile"
-
 	mcbuilder "github.com/multicluster-runtime/multicluster-runtime/pkg/builder"
+	mcreconcile "github.com/multicluster-runtime/multicluster-runtime/pkg/reconcile"
+	apiruntime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/rest"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	mcmanager "github.com/multicluster-runtime/multicluster-runtime/pkg/manager"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/client-go/rest"
 	toolscache "k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
-	cache "sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
@@ -92,16 +93,24 @@ func main() {
 
 	entryLog.Info("Setting up provider")
 	cl, err := cluster.New(cfg, func(options *cluster.Options) {
-		options.Cache.AdditionalDefaultIndexes = map[string]client.IndexerFunc{
-			ClusterNameIndex: func(obj client.Object) []string {
-				return []string{
-					fmt.Sprintf("%s/%s", obj.GetNamespace(), obj.GetName()),
-					fmt.Sprintf("%s/%s", "*", obj.GetName()),
-				}
-			},
-			ClusterIndex: func(obj client.Object) []string {
-				return []string{obj.GetNamespace()}
-			},
+		options.Cache.NewInformer = func(watcher toolscache.ListerWatcher, object apiruntime.Object, duration time.Duration, indexers toolscache.Indexers) toolscache.SharedIndexInformer {
+			inf := toolscache.NewSharedIndexInformer(watcher, object, duration, indexers)
+			if err := inf.AddIndexers(toolscache.Indexers{
+				ClusterNameIndex: func(obj any) ([]string, error) {
+					o := obj.(client.Object)
+					return []string{
+						fmt.Sprintf("%s/%s", o.GetNamespace(), o.GetName()),
+						fmt.Sprintf("%s/%s", "*", o.GetName()),
+					}, nil
+				},
+				ClusterIndex: func(obj any) ([]string, error) {
+					o := obj.(client.Object)
+					return []string{o.GetNamespace()}, nil
+				},
+			}); err != nil {
+				entryLog.Error(err, "unable to add indexers")
+			}
+			return inf
 		}
 	})
 	if err != nil {
