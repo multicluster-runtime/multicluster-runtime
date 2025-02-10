@@ -25,29 +25,31 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	flag "github.com/spf13/pflag"
 	"golang.org/x/sync/errgroup"
 
-	mcbuilder "github.com/multicluster-runtime/multicluster-runtime/pkg/builder"
-	mcreconcile "github.com/multicluster-runtime/multicluster-runtime/pkg/reconcile"
-	apiruntime "k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/rest"
-	"sigs.k8s.io/controller-runtime/pkg/cache"
-	"sigs.k8s.io/controller-runtime/pkg/manager"
-
-	mcmanager "github.com/multicluster-runtime/multicluster-runtime/pkg/manager"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	apiruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/client-go/rest"
 	toolscache "k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
+
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/manager/signals"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	mcbuilder "github.com/multicluster-runtime/multicluster-runtime/pkg/builder"
+	mcmanager "github.com/multicluster-runtime/multicluster-runtime/pkg/manager"
+	mcreconcile "github.com/multicluster-runtime/multicluster-runtime/pkg/reconcile"
 )
 
 func init() {
@@ -59,21 +61,35 @@ func main() {
 	entryLog := log.Log.WithName("entrypoint")
 	ctx := signals.SetupSignalHandler()
 
-	testEnv := &envtest.Environment{}
-	cfg, err := testEnv.Start()
-	if err != nil {
-		entryLog.Error(err, "failed to start local environment")
-		os.Exit(1)
-	}
-	defer func() {
-		if testEnv == nil {
-			return
-		}
-		if err := testEnv.Stop(); err != nil {
-			entryLog.Error(err, "failed to stop local environment")
+	kubeconfig := flag.String("kubeconfig", "", "path to the kubeconfig file. If not given a test env is started.")
+	flag.Parse()
+
+	var cfg *rest.Config
+	if *kubeconfig == "" {
+		testEnv := &envtest.Environment{}
+		var err error
+		cfg, err = testEnv.Start()
+		if err != nil {
+			entryLog.Error(err, "failed to start local environment")
 			os.Exit(1)
 		}
-	}()
+		defer func() {
+			if testEnv == nil {
+				return
+			}
+			if err := testEnv.Stop(); err != nil {
+				entryLog.Error(err, "failed to stop local environment")
+				os.Exit(1)
+			}
+		}()
+	} else {
+		var err error
+		cfg, err = ctrl.GetConfig()
+		if err != nil {
+			entryLog.Error(err, "failed to get kubeconfig")
+			os.Exit(1)
+		}
+	}
 
 	// Test fixtures
 	cli, err := client.New(cfg, client.Options{})
@@ -83,13 +99,13 @@ func main() {
 	}
 
 	entryLog.Info("Creating Namespace and ConfigMap objects")
-	runtime.Must(cli.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "zoo"}}))
-	runtime.Must(cli.Create(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "zoo", Name: "elephant"}}))
-	runtime.Must(cli.Create(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "zoo", Name: "lion"}}))
-	runtime.Must(cli.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "jungle"}}))
-	runtime.Must(cli.Create(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "jungle", Name: "monkey"}}))
-	runtime.Must(cli.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "island"}}))
-	runtime.Must(cli.Create(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "island", Name: "bird"}}))
+	runtime.Must(client.IgnoreAlreadyExists(cli.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "zoo"}})))
+	runtime.Must(client.IgnoreAlreadyExists(cli.Create(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "zoo", Name: "elephant"}})))
+	runtime.Must(client.IgnoreAlreadyExists(cli.Create(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "zoo", Name: "lion"}})))
+	runtime.Must(client.IgnoreAlreadyExists(cli.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "jungle"}})))
+	runtime.Must(client.IgnoreAlreadyExists(cli.Create(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "jungle", Name: "monkey"}})))
+	runtime.Must(client.IgnoreAlreadyExists(cli.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "island"}})))
+	runtime.Must(client.IgnoreAlreadyExists(cli.Create(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "island", Name: "bird"}})))
 
 	entryLog.Info("Setting up provider")
 	cl, err := cluster.New(cfg, func(options *cluster.Options) {

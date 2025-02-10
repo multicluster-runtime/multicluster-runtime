@@ -42,6 +42,12 @@ func handlerWithCluster[object any, request mcreconcile.ClusterAware[request]](n
 		CreateFunc: func(ctx context.Context, e event.TypedCreateEvent[object], q workqueue.TypedRateLimitingInterface[request]) {
 			h.Create(ctx, e, clusterAwareWorkqueue[request]{cluster: name, q: q})
 		},
+		UpdateFunc: func(ctx context.Context, e event.TypedUpdateEvent[object], q workqueue.TypedRateLimitingInterface[request]) {
+			h.Update(ctx, e, clusterAwareWorkqueue[request]{cluster: name, q: q})
+		},
+		DeleteFunc: func(ctx context.Context, e event.TypedDeleteEvent[object], q workqueue.TypedRateLimitingInterface[request]) {
+			h.Delete(ctx, e, clusterAwareWorkqueue[request]{cluster: name, q: q})
+		},
 	}
 }
 

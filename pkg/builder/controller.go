@@ -24,6 +24,8 @@ import (
 
 	"github.com/go-logr/logr"
 
+	mchandler "github.com/multicluster-runtime/multicluster-runtime/pkg/handler"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/klog/v2"
@@ -337,15 +339,21 @@ func (blder *TypedBuilder[request]) project(proj objectProjection) func(cluster.
 func (blder *TypedBuilder[request]) doWatch() error {
 	// Reconcile type
 	if blder.forInput.object != nil {
-		if reflect.TypeFor[request]() != reflect.TypeOf(reconcile.Request{}) {
-			return fmt.Errorf("For() can only be used with reconcile.Request, got %T", *new(request))
+		var enqueueRequestForObject any
+		if reflect.TypeFor[request]() == reflect.TypeOf(reconcile.Request{}) {
+			enqueueRequestForObject = handler.WithLowPriorityWhenUnchanged(&handler.EnqueueRequestForObject{})
+		} else if reflect.TypeFor[request]() == reflect.TypeOf(mcreconcile.Request{}) {
+			enqueueRequestForObject = handler.WithLowPriorityWhenUnchanged(&mchandler.EnqueueRequestForObject{})
+		} else {
+			return fmt.Errorf("For() can only be used with (mc)reconcile.Request, got %T", *new(request))
 		}
 
-		newHdler := func(_ string, _ cluster.Cluster) handler.TypedEventHandler[client.Object, request] {
+		newHdler := func(clusterName string, _ cluster.Cluster) handler.TypedEventHandler[client.Object, request] {
 			var hdler handler.TypedEventHandler[client.Object, request]
-			reflect.ValueOf(&hdler).Elem().Set(reflect.ValueOf(handler.WithLowPriorityWhenUnchanged(&handler.EnqueueRequestForObject{})))
-			return hdler
+			reflect.ValueOf(&hdler).Elem().Set(reflect.ValueOf(enqueueRequestForObject))
+			return handlerWithCluster[client.Object, request](clusterName, hdler)
 		}
+
 		allPredicates := append([]predicate.Predicate(nil), blder.globalPredicates...)
 		allPredicates = append(allPredicates, blder.forInput.predicates...)
 
@@ -377,14 +385,14 @@ func (blder *TypedBuilder[request]) doWatch() error {
 			opts = append(opts, handler.OnlyControllerOwner())
 		}
 
-		newHdler := func(_ string, cl cluster.Cluster) handler.TypedEventHandler[client.Object, request] {
+		newHdler := func(clusterName string, cl cluster.Cluster) handler.TypedEventHandler[client.Object, request] {
 			var hdler handler.TypedEventHandler[client.Object, request]
 			reflect.ValueOf(&hdler).Elem().Set(reflect.ValueOf(handler.WithLowPriorityWhenUnchanged(handler.EnqueueRequestForOwner(
 				blder.mgr.GetLocalManager().GetScheme(), cl.GetRESTMapper(),
 				blder.forInput.object,
 				opts...,
 			))))
-			return hdler
+			return handlerWithCluster[client.Object, request](clusterName, hdler)
 		}
 		allPredicates := append([]predicate.Predicate(nil), blder.globalPredicates...)
 		allPredicates = append(allPredicates, own.predicates...)

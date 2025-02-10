@@ -127,10 +127,13 @@ func (i *ScopedInformer) AddEventHandler(handler toolscache.ResourceEventHandler
 		},
 		UpdateFunc: func(oldObj, newObj interface{}) {
 			cobj := newObj.(client.Object)
+			cold := oldObj.(client.Object)
 			if cobj.GetNamespace() == i.clusterName {
 				cobj := cobj.DeepCopyObject().(client.Object)
 				cobj.SetNamespace("default")
-				handler.OnUpdate(oldObj, cobj)
+				cold := cold.DeepCopyObject().(client.Object)
+				cold.SetNamespace("default")
+				handler.OnUpdate(cold, cobj)
 			}
 		},
 		DeleteFunc: func(obj interface{}) {
@@ -158,11 +161,13 @@ func (i *ScopedInformer) AddEventHandlerWithResyncPeriod(handler toolscache.Reso
 			}
 		},
 		UpdateFunc: func(oldObj, newObj interface{}) {
-			cobj := newObj.(client.Object)
-			if cobj.GetNamespace() == i.clusterName {
-				cobj := cobj.DeepCopyObject().(client.Object)
-				cobj.SetNamespace("default")
-				handler.OnUpdate(oldObj, cobj)
+			obj := newObj.(client.Object)
+			if obj.GetNamespace() == i.clusterName {
+				obj := obj.DeepCopyObject().(client.Object)
+				obj.SetNamespace("default")
+				old := oldObj.(client.Object).DeepCopyObject().(client.Object)
+				old.SetNamespace("default")
+				handler.OnUpdate(old, obj)
 			}
 		},
 		DeleteFunc: func(obj interface{}) {

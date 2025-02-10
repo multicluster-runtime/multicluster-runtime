@@ -139,10 +139,18 @@ func (c *mcController[request]) Engage(ctx context.Context, name string, cl clus
 		}
 	}
 
-	c.clusters[name] = engagedCluster{
+	ec := engagedCluster{
 		name:    name,
 		cluster: cl,
 	}
+	c.clusters[name] = ec
+	go func() {
+		c.lock.Lock()
+		defer c.lock.Unlock()
+		if c.clusters[name] == ec {
+			delete(c.clusters, name)
+		}
+	}()
 
 	return nil
 }

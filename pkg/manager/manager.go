@@ -195,7 +195,7 @@ func (m *mcManager) Add(r Runnable) (err error) {
 		}
 	}()
 
-	return m.Add(r)
+	return m.Manager.Add(r)
 }
 
 // Engage gets called when the component should start operations for the given
