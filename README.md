@@ -15,7 +15,7 @@ Run the same reconciler against many clusters:
 - The reconciler reads from cluster B and writes to cluster B.
 - The reconciler reads from cluster C and writes to cluster C.
 
-This is the most simple case. Many existing reconcilers can easily adapted to work like this without major code changes. The resulting controllers will work in the multi-cluster setting, but also in the classical single-cluster setup, all in the same code base.![Uploading multi-cluster topologies uniform.svg…]()
+This is the most simple case. Many existing reconcilers can easily adapted to work like this without major code changes. The resulting controllers will work in the multi-cluster setting, but also in the classical single-cluster setup, all in the same code base.
 
 ![multi-cluster topologies uniform](https://github.com/user-attachments/assets/b91a3aac-6a1c-481e-8961-2f25605aeffe)
 
