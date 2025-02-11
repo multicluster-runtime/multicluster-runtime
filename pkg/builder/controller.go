@@ -24,10 +24,9 @@ import (
 
 	"github.com/go-logr/logr"
 
-	mchandler "github.com/multicluster-runtime/multicluster-runtime/pkg/handler"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/ptr"
 
@@ -35,15 +34,18 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/controller/priorityqueue"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	mccontroller "github.com/multicluster-runtime/multicluster-runtime/pkg/controller"
+	mchandler "github.com/multicluster-runtime/multicluster-runtime/pkg/handler"
 	mcmanager "github.com/multicluster-runtime/multicluster-runtime/pkg/manager"
 	mcreconcile "github.com/multicluster-runtime/multicluster-runtime/pkg/reconcile"
 	mcsource "github.com/multicluster-runtime/multicluster-runtime/pkg/source"
+	mcworkqueue "github.com/multicluster-runtime/multicluster-runtime/pkg/workqueue"
 )
 
 // project represents other forms that we can use to
@@ -464,6 +466,23 @@ func (blder *TypedBuilder[request]) doController(r reconcile.TypedReconciler[req
 	}
 	if ctrlOptions.Reconciler == nil {
 		ctrlOptions.Reconciler = r
+	}
+	if ctrlOptions.NewQueue == nil {
+		ctrlOptions.NewQueue = func(controllerName string, rateLimiter workqueue.TypedRateLimiter[request]) workqueue.TypedRateLimitingInterface[request] {
+			if ptr.Deref(blder.mgr.GetControllerOptions().UsePriorityQueue, false) {
+				return priorityqueue.New(controllerName, func(o *priorityqueue.Opts[request]) {
+					o.Log = blder.mgr.GetLogger().WithValues("controller", controllerName)
+					o.RateLimiter = rateLimiter
+				})
+			}
+			return workqueue.NewTypedRateLimitingQueueWithConfig(rateLimiter, workqueue.TypedRateLimitingQueueConfig[request]{
+				Name: controllerName,
+				DelayingQueue: workqueue.NewTypedDelayingQueueWithConfig(workqueue.TypedDelayingQueueConfig[request]{
+					Name:  controllerName,
+					Queue: mcworkqueue.NewClusterFair[request](),
+				}),
+			})
+		}
 	}
 
 	// Retrieve the GVK from the object we're reconciling
