@@ -6,4 +6,4 @@
 Multi cluster controllers with controller-runtime
 - **no fork, no go mod replace**: extension to the unmodified [upstream controller-runtime](https://github.com/kubernetes-sigs/controller-runtime).
 - **universal**: cluster-api. kcp. BYO. Cluster providers make the controller-runtime multi-cluster aware.
-- **seamless**: single-cluster and multi-cluster mode without code changes to the reconcilers.
+- **seamless**: add multi-cluster support without compromising on single-cluster. Run in either mode without code changes to the reconcilers. 
