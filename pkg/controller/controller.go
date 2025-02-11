@@ -113,7 +113,7 @@ func (c *mcController[request]) Engage(ctx context.Context, name string, cl clus
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
-	if _, ok := c.clusters[name]; ok {
+	if old, ok := c.clusters[name]; ok && old.cluster == cl {
 		return nil
 	}
 
