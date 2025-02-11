@@ -3,7 +3,8 @@
 <img src="https://github.com/user-attachments/assets/452f680b-c635-4c67-9099-e35a08ca5e02" width="200">
 <br/>
 
-Multi cluster controllers with controller-runtime
+## Multi cluster controllers with controller-runtime
+
 - **no fork, no go mod replace**: extension to the unmodified [upstream controller-runtime](https://github.com/kubernetes-sigs/controller-runtime).
 - **universal**: cluster-api. kcp. BYO. Cluster providers make the controller-runtime multi-cluster aware.
 - **seamless**: add multi-cluster support without compromising on single-cluster. Run in either mode without code changes to the reconcilers. 
@@ -23,4 +24,4 @@ This is the most simple case. Many existing reconcilers can easily adapted to wo
 
 Run reconcilers that listen to some cluster(s) and operate other clusters.
 
-![multi-cluster topologies cross](https://github.com/user-attachments/assets/68f3813d-58da-46ae-9f40-52882348ae02)
+![multi-cluster topologies multi](https://github.com/user-attachments/assets/764ee3d2-2978-4073-992b-80268116115d)
