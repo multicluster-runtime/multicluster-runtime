@@ -21,19 +21,14 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"sync"
-	"time"
 
-	"github.com/go-logr/logr"
 	flag "github.com/spf13/pflag"
 	"golang.org/x/sync/errgroup"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	apiruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/rest"
-	toolscache "k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -50,6 +45,7 @@ import (
 	mcbuilder "github.com/multicluster-runtime/multicluster-runtime/pkg/builder"
 	mcmanager "github.com/multicluster-runtime/multicluster-runtime/pkg/manager"
 	mcreconcile "github.com/multicluster-runtime/multicluster-runtime/pkg/reconcile"
+	"github.com/multicluster-runtime/multicluster-runtime/providers/namespace"
 )
 
 func init() {
@@ -108,39 +104,19 @@ func main() {
 	runtime.Must(client.IgnoreAlreadyExists(cli.Create(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "island", Name: "bird"}})))
 
 	entryLog.Info("Setting up provider")
-	cl, err := cluster.New(cfg, func(options *cluster.Options) {
-		options.Cache.NewInformer = func(watcher toolscache.ListerWatcher, object apiruntime.Object, duration time.Duration, indexers toolscache.Indexers) toolscache.SharedIndexInformer {
-			inf := toolscache.NewSharedIndexInformer(watcher, object, duration, indexers)
-			if err := inf.AddIndexers(toolscache.Indexers{
-				ClusterNameIndex: func(obj any) ([]string, error) {
-					o := obj.(client.Object)
-					return []string{
-						fmt.Sprintf("%s/%s", o.GetNamespace(), o.GetName()),
-						fmt.Sprintf("%s/%s", "*", o.GetName()),
-					}, nil
-				},
-				ClusterIndex: func(obj any) ([]string, error) {
-					o := obj.(client.Object)
-					return []string{o.GetNamespace()}, nil
-				},
-			}); err != nil {
-				entryLog.Error(err, "unable to add indexers")
-			}
-			return inf
-		}
-	})
+	cl, err := cluster.New(cfg, namespace.WithClusterNameIndex())
 	if err != nil {
 		entryLog.Error(err, "unable to set up provider")
 		os.Exit(1)
 	}
-	provider := NewNamespacedClusterProvider(cl)
+	provider := namespace.NewNamespacedClusterProvider(cl)
 
 	// Setup a cluster-aware Manager, with the provider to lookup clusters.
 	entryLog.Info("Setting up cluster-aware manager")
 	mgr, err := mcmanager.New(cfg, provider, manager.Options{
 		NewCache: func(config *rest.Config, opts cache.Options) (cache.Cache, error) {
 			// wrap cache to turn IndexField calls into cluster-scoped indexes.
-			return &NamespaceScopeableCache{Cache: cl.GetCache()}, nil
+			return &namespace.NamespaceScopeableCache{Cache: cl.GetCache()}, nil
 		},
 	})
 	if err != nil {
@@ -197,103 +173,6 @@ func main() {
 		entryLog.Error(err, "unable to run manager")
 		os.Exit(1)
 	}
-}
-
-// NamespacedClusterProvider is a cluster provider that represents each namespace
-// as a dedicated cluster with only a "default" namespace. It maps each namespace
-// to "default" and vice versa, simulating a multi-cluster setup. It uses one
-// informer to watch objects for all namespaces.
-type NamespacedClusterProvider struct {
-	cluster cluster.Cluster
-
-	mgr manager.Manager
-
-	log       logr.Logger
-	lock      sync.RWMutex
-	clusters  map[string]cluster.Cluster
-	cancelFns map[string]context.CancelFunc
-}
-
-func NewNamespacedClusterProvider(cl cluster.Cluster) *NamespacedClusterProvider {
-	return &NamespacedClusterProvider{
-		cluster:   cl,
-		log:       log.Log.WithName("namespaced-cluster-provider"),
-		clusters:  map[string]cluster.Cluster{},
-		cancelFns: map[string]context.CancelFunc{},
-	}
-}
-
-func (p *NamespacedClusterProvider) Start(ctx context.Context, mgr mcmanager.Manager) error {
-	nsInf, err := p.cluster.GetCache().GetInformer(ctx, &corev1.Namespace{})
-	if err != nil {
-		return err
-	}
-
-	if _, err := nsInf.AddEventHandler(toolscache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			ns := obj.(*corev1.Namespace)
-			p.log.WithValues("namespace", ns.Name).Info("Encountered namespace")
-
-			p.lock.RLock()
-			_, ok := p.clusters[ns.Name]
-			p.lock.RUnlock()
-
-			if ok {
-				return
-			}
-
-			// create new cluster
-			p.lock.Lock()
-			clusterCtx, cancel := context.WithCancel(ctx)
-			cl := &NamespacedCluster{clusterName: ns.Name, Cluster: p.cluster}
-			p.clusters[ns.Name] = cl
-			p.cancelFns[ns.Name] = cancel
-			p.lock.Unlock()
-
-			if err := mgr.Engage(clusterCtx, ns.Name, cl); err != nil {
-				runtime.HandleError(fmt.Errorf("failed to engage manager with cluster %q: %w", ns.Name, err))
-
-				// cleanup
-				p.lock.Lock()
-				delete(p.clusters, ns.Name)
-				delete(p.cancelFns, ns.Name)
-				p.lock.Unlock()
-			}
-		},
-		DeleteFunc: func(obj interface{}) {
-			ns := obj.(*corev1.Namespace)
-
-			p.lock.RLock()
-			cancel, ok := p.cancelFns[ns.Name]
-			if !ok {
-				p.lock.RUnlock()
-				return
-			}
-			p.lock.RUnlock()
-
-			cancel()
-
-			// stop and forget
-			p.lock.Lock()
-			p.cancelFns[ns.Name]()
-			delete(p.clusters, ns.Name)
-			delete(p.cancelFns, ns.Name)
-			p.lock.Unlock()
-		},
-	}); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (p *NamespacedClusterProvider) Get(ctx context.Context, clusterName string) (cluster.Cluster, error) {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-	if cl, ok := p.clusters[clusterName]; ok {
-		return cl, nil
-	}
-	return nil, fmt.Errorf("cluster %s not found", clusterName)
 }
 
 func ignoreCanceled(err error) error {
