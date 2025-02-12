@@ -74,9 +74,9 @@ func main() {
 		For(&corev1.Pod{}).
 		Complete(mcreconcile.Func(
 			func(ctx context.Context, req mcreconcile.Request) (ctrl.Result, error) {
-				log := log.FromContext(ctx).WithValues("cluster", req.ClusterName)
+				log := log.FromContext(ctx).WithValues("cluster", req.Cluster)
 
-				cl, err := mgr.GetCluster(ctx, req.ClusterName)
+				cl, err := mgr.GetCluster(ctx, req.Cluster)
 				if err != nil {
 					return reconcile.Result{}, err
 				}

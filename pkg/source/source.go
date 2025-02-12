@@ -18,7 +18,7 @@ package source
 
 import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/cluster"
+	ctrlcluster "sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/source"
@@ -34,7 +34,7 @@ import (
 // * Use Channel for events originating outside the cluster (e.g. GitHub Webhook callback, Polling external urls).
 //
 // Users may build their own Source implementations.
-type Source = TypedSource[client.Object, mcreconcile.Request]
+type Source = TypedSource[client.Object, string, mcreconcile.Request]
 
 // TypedSource is a generic source of events (e.g. Create, Update, Delete operations on Kubernetes Objects, Webhook callbacks, etc)
 // which should be processed by event.EventHandlers to enqueue a request.
@@ -44,50 +44,50 @@ type Source = TypedSource[client.Object, mcreconcile.Request]
 // * Use Channel for events originating outside the cluster (e.g. GitHub Webhook callback, Polling external urls).
 //
 // Users may build their own Source implementations.
-type TypedSource[object client.Object, request comparable] interface {
-	ForCluster(string, cluster.Cluster) (source.TypedSource[request], error)
+type TypedSource[object client.Object, cluster, request comparable] interface {
+	ForCluster(cluster, ctrlcluster.Cluster) (source.TypedSource[request], error)
 }
 
 // SyncingSource is a source that needs syncing prior to being usable. The controller
 // will call its WaitForSync prior to starting workers.
-type SyncingSource[object client.Object] TypedSyncingSource[object, mcreconcile.Request]
+type SyncingSource[object client.Object] TypedSyncingSource[object, string, mcreconcile.Request]
 
 // TypedSyncingSource is a source that needs syncing prior to being usable. The controller
 // will call its WaitForSync prior to starting workers.
-type TypedSyncingSource[object client.Object, request comparable] interface {
-	TypedSource[object, request]
-	SyncingForCluster(string, cluster.Cluster) (source.TypedSyncingSource[request], error)
-	WithProjection(func(cluster.Cluster, object) (object, error)) TypedSyncingSource[object, request]
+type TypedSyncingSource[object client.Object, cluster, request comparable] interface {
+	TypedSource[object, cluster, request]
+	SyncingForCluster(cluster, ctrlcluster.Cluster) (source.TypedSyncingSource[request], error)
+	WithProjection(func(ctrlcluster.Cluster, object) (object, error)) TypedSyncingSource[object, cluster, request]
 }
 
 // Kind creates a KindSource with the given cache provider.
 func Kind[object client.Object](
 	obj object,
-	handler func(string, cluster.Cluster) handler.TypedEventHandler[object, mcreconcile.Request],
+	handler func(string, ctrlcluster.Cluster) handler.TypedEventHandler[object, mcreconcile.Request],
 	predicates ...predicate.TypedPredicate[object],
 ) SyncingSource[object] {
-	return TypedKind[object, mcreconcile.Request](obj, handler, predicates...)
+	return TypedKind[object, string, mcreconcile.Request](obj, handler, predicates...)
 }
 
 // TypedKind creates a KindSource with the given cache provider.
-func TypedKind[object client.Object, request mcreconcile.ClusterAware[request]](
+func TypedKind[object client.Object, cluster comparable, request mcreconcile.ClusterAware[cluster, request]](
 	obj object,
-	handler func(string, cluster.Cluster) handler.TypedEventHandler[object, request],
+	handler func(cluster, ctrlcluster.Cluster) handler.TypedEventHandler[object, request],
 	predicates ...predicate.TypedPredicate[object],
-) TypedSyncingSource[object, request] {
-	return &kind[object, request]{
+) TypedSyncingSource[object, cluster, request] {
+	return &kind[object, cluster, request]{
 		obj:        obj,
 		handler:    handler,
 		predicates: predicates,
-		project:    func(_ cluster.Cluster, obj object) (object, error) { return obj, nil },
+		project:    func(_ ctrlcluster.Cluster, obj object) (object, error) { return obj, nil },
 	}
 }
 
-type kind[object client.Object, request comparable] struct {
+type kind[object client.Object, cluster comparable, request comparable] struct {
 	obj        object
-	handler    func(name string, cl cluster.Cluster) handler.TypedEventHandler[object, request]
+	handler    func(name cluster, cl ctrlcluster.Cluster) handler.TypedEventHandler[object, request]
 	predicates []predicate.TypedPredicate[object]
-	project    func(cluster.Cluster, object) (object, error)
+	project    func(ctrlcluster.Cluster, object) (object, error)
 }
 
 type clusterKind[object client.Object, request comparable] struct {
@@ -95,27 +95,27 @@ type clusterKind[object client.Object, request comparable] struct {
 }
 
 // WithProjection sets the projection function for the KindSource.
-func (k *kind[object, request]) WithProjection(project func(cluster.Cluster, object) (object, error)) TypedSyncingSource[object, request] {
+func (k *kind[object, cluster, request]) WithProjection(project func(ctrlcluster.Cluster, object) (object, error)) TypedSyncingSource[object, cluster, request] {
 	k.project = project
 	return k
 }
 
-func (k *kind[object, request]) ForCluster(name string, cl cluster.Cluster) (source.TypedSource[request], error) {
+func (k *kind[object, cluster, request]) ForCluster(clRef cluster, cl ctrlcluster.Cluster) (source.TypedSource[request], error) {
 	obj, err := k.project(cl, k.obj)
 	if err != nil {
 		return nil, err
 	}
 	return &clusterKind[object, request]{
-		TypedSyncingSource: source.TypedKind(cl.GetCache(), obj, k.handler(name, cl), k.predicates...),
+		TypedSyncingSource: source.TypedKind(cl.GetCache(), obj, k.handler(clRef, cl), k.predicates...),
 	}, nil
 }
 
-func (k *kind[object, request]) SyncingForCluster(name string, cl cluster.Cluster) (source.TypedSyncingSource[request], error) {
+func (k *kind[object, cluster, request]) SyncingForCluster(clRef cluster, cl ctrlcluster.Cluster) (source.TypedSyncingSource[request], error) {
 	obj, err := k.project(cl, k.obj)
 	if err != nil {
 		return nil, err
 	}
 	return &clusterKind[object, request]{
-		TypedSyncingSource: source.TypedKind(cl.GetCache(), obj, k.handler(name, cl), k.predicates...),
+		TypedSyncingSource: source.TypedKind(cl.GetCache(), obj, k.handler(clRef, cl), k.predicates...),
 	}, nil
 }

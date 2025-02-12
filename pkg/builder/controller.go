@@ -33,7 +33,7 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
-	"sigs.k8s.io/controller-runtime/pkg/cluster"
+	ctrlcluster "sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -58,32 +58,32 @@ const (
 )
 
 // Builder builds a Controller.
-type Builder = TypedBuilder[mcreconcile.Request]
+type Builder = TypedBuilder[string, mcreconcile.TypedRequest[string]]
 
 // TypedBuilder builds a Controller. The request is the request type
 // that is passed to the workqueue and then to the Reconciler.
 // The workqueue de-duplicates identical requests.
-type TypedBuilder[request mcreconcile.ClusterAware[request]] struct {
+type TypedBuilder[cluster comparable, request mcreconcile.ClusterAware[cluster, request]] struct {
 	forInput         ForInput
 	ownsInput        []OwnsInput
 	rawSources       []source.TypedSource[request]
-	watchesInput     []WatchesInput[request]
-	mgr              mcmanager.Manager
+	watchesInput     []WatchesInput[cluster, request]
+	mgr              mcmanager.TypedManager[cluster]
 	globalPredicates []predicate.Predicate
-	ctrl             mccontroller.TypedController[request]
+	ctrl             mccontroller.TypedController[cluster, request]
 	ctrlOptions      controller.TypedOptions[request]
 	name             string
-	newController    func(name string, mgr mcmanager.Manager, options controller.TypedOptions[request]) (mccontroller.TypedController[request], error)
+	newController    func(name string, mgr mcmanager.TypedManager[cluster], options controller.TypedOptions[request]) (mccontroller.TypedController[cluster, request], error)
 }
 
 // ControllerManagedBy returns a new controller builder that will be started by the provided Manager.
 func ControllerManagedBy(m mcmanager.Manager) *Builder {
-	return TypedControllerManagedBy[mcreconcile.Request](m)
+	return TypedControllerManagedBy[string, mcreconcile.Request](m)
 }
 
 // TypedControllerManagedBy returns a new typed controller builder that will be started by the provided Manager.
-func TypedControllerManagedBy[request mcreconcile.ClusterAware[request]](m mcmanager.Manager) *TypedBuilder[request] {
-	return &TypedBuilder[request]{mgr: m}
+func TypedControllerManagedBy[cluster comparable, request mcreconcile.ClusterAware[cluster, request]](m mcmanager.TypedManager[cluster]) *TypedBuilder[cluster, request] {
+	return &TypedBuilder[cluster, request]{mgr: m}
 }
 
 // ForInput represents the information set by the For method.
@@ -101,7 +101,7 @@ type ForInput struct {
 //
 // This is the equivalent of calling
 // Watches(source.Kind(cache, &Type{}, &handler.EnqueueRequestForObject{})).
-func (blder *TypedBuilder[request]) For(object client.Object, opts ...ForOption) *TypedBuilder[request] {
+func (blder *TypedBuilder[cluster, request]) For(object client.Object, opts ...ForOption) *TypedBuilder[cluster, request] {
 	if blder.forInput.object != nil {
 		blder.forInput.err = fmt.Errorf("For(...) should only be called once, could not assign multiple objects for reconciliation")
 		return blder
@@ -133,7 +133,7 @@ type OwnsInput struct {
 //
 // By default, this is the equivalent of calling
 // Watches(source.Kind(cache, &Type{}, handler.EnqueueRequestForOwner([...], &OwnerType{}, OnlyControllerOwner()))).
-func (blder *TypedBuilder[request]) Owns(object client.Object, opts ...OwnsOption) *TypedBuilder[request] {
+func (blder *TypedBuilder[cluster, request]) Owns(object client.Object, opts ...OwnsOption) *TypedBuilder[cluster, request] {
 	input := OwnsInput{object: object}
 	for _, opt := range opts {
 		opt.ApplyToOwns(&input)
@@ -152,23 +152,23 @@ type untypedWatchesInput interface {
 
 // NewTypedEventHandlerFunc is a constructor for a TypedEventHandler that uses
 // a given cluster.
-type NewTypedEventHandlerFunc[request mcreconcile.ClusterAware[request]] func(string, cluster.Cluster) handler.TypedEventHandler[client.Object, request]
+type NewTypedEventHandlerFunc[cluster comparable, request mcreconcile.ClusterAware[cluster, request]] func(cluster, ctrlcluster.Cluster) handler.TypedEventHandler[client.Object, request]
 
 // WatchesInput represents the information set by Watches method.
-type WatchesInput[request mcreconcile.ClusterAware[request]] struct {
+type WatchesInput[cluster comparable, request mcreconcile.ClusterAware[cluster, request]] struct {
 	obj              client.Object
-	handler          NewTypedEventHandlerFunc[request]
+	handler          NewTypedEventHandlerFunc[cluster, request]
 	predicates       []predicate.Predicate
 	objectProjection objectProjection
 
 	EngageOptions
 }
 
-func (w *WatchesInput[request]) setPredicates(predicates []predicate.Predicate) {
+func (w *WatchesInput[cluster, request]) setPredicates(predicates []predicate.Predicate) {
 	w.predicates = predicates
 }
 
-func (w *WatchesInput[request]) setObjectProjection(objectProjection objectProjection) {
+func (w *WatchesInput[cluster, request]) setObjectProjection(objectProjection objectProjection) {
 	w.objectProjection = objectProjection
 }
 
@@ -177,15 +177,15 @@ func (w *WatchesInput[request]) setObjectProjection(objectProjection objectProje
 //
 // This is the equivalent of calling
 // WatchesRawSource(source.Kind(cache, object, eventHandler, predicates...)).
-func (blder *TypedBuilder[request]) Watches(
+func (blder *TypedBuilder[cluster, request]) Watches(
 	object client.Object,
-	eventHandler NewTypedEventHandlerFunc[request],
+	eventHandler NewTypedEventHandlerFunc[cluster, request],
 	opts ...WatchesOption,
-) *TypedBuilder[request] {
-	input := WatchesInput[request]{
+) *TypedBuilder[cluster, request] {
+	input := WatchesInput[cluster, request]{
 		obj: object,
-		handler: func(name string, cl cluster.Cluster) handler.TypedEventHandler[client.Object, request] {
-			hdlr := handlerWithCluster[client.Object, request](name, eventHandler(name, cl))
+		handler: func(clRef cluster, cl ctrlcluster.Cluster) handler.TypedEventHandler[client.Object, request] {
+			hdlr := handlerWithCluster[client.Object, cluster, request](clRef, eventHandler(clRef, cl))
 			return handler.WithLowPriorityWhenUnchanged(hdlr)
 		},
 	}
@@ -225,11 +225,11 @@ func (blder *TypedBuilder[request]) Watches(
 // In the first case, controller-runtime will create another cache for the
 // concrete type on top of the metadata cache; this increases memory
 // consumption and leads to race conditions as caches are not in sync.
-func (blder *TypedBuilder[request]) WatchesMetadata(
+func (blder *TypedBuilder[cluster, request]) WatchesMetadata(
 	object client.Object,
-	eventHandler NewTypedEventHandlerFunc[request],
+	eventHandler NewTypedEventHandlerFunc[cluster, request],
 	opts ...WatchesOption,
-) *TypedBuilder[request] {
+) *TypedBuilder[cluster, request] {
 	opts = append(opts, OnlyMetadata)
 	return blder.Watches(object, eventHandler, opts...)
 }
@@ -239,7 +239,7 @@ func (blder *TypedBuilder[request]) WatchesMetadata(
 // WatchesRawSource does not respect predicates configured through WithEventFilter.
 //
 // WatchesRawSource makes it possible to use typed handlers and predicates with `source.Kind` as well as custom source implementations.
-func (blder *TypedBuilder[request]) WatchesRawSource(src source.TypedSource[request]) *TypedBuilder[request] {
+func (blder *TypedBuilder[cluster, request]) WatchesRawSource(src source.TypedSource[request]) *TypedBuilder[cluster, request] {
 	blder.rawSources = append(blder.rawSources, src)
 
 	return blder
@@ -251,19 +251,19 @@ func (blder *TypedBuilder[request]) WatchesRawSource(src source.TypedSource[requ
 // of all watched objects.
 //
 // Defaults to the empty list.
-func (blder *TypedBuilder[request]) WithEventFilter(p predicate.Predicate) *TypedBuilder[request] {
+func (blder *TypedBuilder[cluster, request]) WithEventFilter(p predicate.Predicate) *TypedBuilder[cluster, request] {
 	blder.globalPredicates = append(blder.globalPredicates, p)
 	return blder
 }
 
 // WithOptions overrides the controller options used in doController. Defaults to empty.
-func (blder *TypedBuilder[request]) WithOptions(options controller.TypedOptions[request]) *TypedBuilder[request] {
+func (blder *TypedBuilder[cluster, request]) WithOptions(options controller.TypedOptions[request]) *TypedBuilder[cluster, request] {
 	blder.ctrlOptions = options
 	return blder
 }
 
 // WithLogConstructor overrides the controller options's LogConstructor.
-func (blder *TypedBuilder[request]) WithLogConstructor(logConstructor func(*request) logr.Logger) *TypedBuilder[request] {
+func (blder *TypedBuilder[cluster, request]) WithLogConstructor(logConstructor func(*request) logr.Logger) *TypedBuilder[cluster, request] {
 	blder.ctrlOptions.LogConstructor = logConstructor
 	return blder
 }
@@ -275,7 +275,7 @@ func (blder *TypedBuilder[request]) WithLogConstructor(logConstructor func(*requ
 // By default, controllers are named using the lowercase version of their kind.
 //
 // The name must be unique as it is used to identify the controller in metrics and logs.
-func (blder *TypedBuilder[request]) Named(name string) *TypedBuilder[request] {
+func (blder *TypedBuilder[cluster, request]) Named(name string) *TypedBuilder[cluster, request] {
 	blder.name = name
 	return blder
 }
@@ -284,7 +284,7 @@ func (blder *TypedBuilder[request]) Named(name string) *TypedBuilder[request] {
 //
 // Note: use context.ReconcilerWithClusterInContext to inject the cluster name
 // into the and to use Manager.GetClusterInContext to retrieve the cluster.
-func (blder *TypedBuilder[request]) Complete(r reconcile.TypedReconciler[request]) error {
+func (blder *TypedBuilder[cluster, request]) Complete(r reconcile.TypedReconciler[request]) error {
 	_, err := blder.Build(r)
 	return err
 }
@@ -293,7 +293,7 @@ func (blder *TypedBuilder[request]) Complete(r reconcile.TypedReconciler[request
 //
 // Note: use context.ReconcilerWithClusterInContext to inject the cluster name
 // into the and to use Manager.GetClusterInContext to retrieve the cluster.
-func (blder *TypedBuilder[request]) Build(r reconcile.TypedReconciler[request]) (mccontroller.TypedController[request], error) {
+func (blder *TypedBuilder[cluster, request]) Build(r reconcile.TypedReconciler[request]) (mccontroller.TypedController[cluster, request], error) {
 	if r == nil {
 		return nil, fmt.Errorf("must provide a non-nil Reconciler")
 	}
@@ -317,8 +317,8 @@ func (blder *TypedBuilder[request]) Build(r reconcile.TypedReconciler[request]) 
 	return blder.ctrl, nil
 }
 
-func (blder *TypedBuilder[request]) project(proj objectProjection) func(cluster.Cluster, client.Object) (client.Object, error) {
-	return func(cl cluster.Cluster, obj client.Object) (client.Object, error) {
+func (blder *TypedBuilder[cluster, request]) project(proj objectProjection) func(ctrlcluster.Cluster, client.Object) (client.Object, error) {
+	return func(cl ctrlcluster.Cluster, obj client.Object) (client.Object, error) {
 		switch proj {
 		case projectAsNormal:
 			return obj, nil
@@ -336,31 +336,32 @@ func (blder *TypedBuilder[request]) project(proj objectProjection) func(cluster.
 	}
 }
 
-func (blder *TypedBuilder[request]) doWatch() error {
+func (blder *TypedBuilder[cluster, request]) doWatch() error {
 	// Reconcile type
 	if blder.forInput.object != nil {
 		var enqueueRequestForObject any
 		if reflect.TypeFor[request]() == reflect.TypeOf(reconcile.Request{}) {
 			enqueueRequestForObject = handler.WithLowPriorityWhenUnchanged(&handler.EnqueueRequestForObject{})
 		} else if reflect.TypeFor[request]() == reflect.TypeOf(mcreconcile.Request{}) {
-			enqueueRequestForObject = handler.WithLowPriorityWhenUnchanged(&mchandler.EnqueueRequestForObject{})
+			enqueueRequestForObject = handler.WithLowPriorityWhenUnchanged[client.Object, mcreconcile.TypedRequest[cluster]](&mchandler.TypedEnqueueRequestForObject[client.Object, cluster]{})
 		} else {
 			return fmt.Errorf("For() can only be used with (mc)reconcile.Request, got %T", *new(request))
 		}
 
-		newHdler := func(clusterName string, _ cluster.Cluster) handler.TypedEventHandler[client.Object, request] {
+		newHdler := func(cl cluster, _ ctrlcluster.Cluster) handler.TypedEventHandler[client.Object, request] {
 			var hdler handler.TypedEventHandler[client.Object, request]
 			reflect.ValueOf(&hdler).Elem().Set(reflect.ValueOf(enqueueRequestForObject))
-			return handlerWithCluster[client.Object, request](clusterName, hdler)
+			return handlerWithCluster[client.Object, cluster, request](cl, hdler)
 		}
 
 		allPredicates := append([]predicate.Predicate(nil), blder.globalPredicates...)
 		allPredicates = append(allPredicates, blder.forInput.predicates...)
 
-		src := mcsource.TypedKind[client.Object, request](blder.forInput.object, newHdler, allPredicates...).
+		src := mcsource.TypedKind[client.Object, cluster, request](blder.forInput.object, newHdler, allPredicates...).
 			WithProjection(blder.project(blder.forInput.objectProjection))
 		if ptr.Deref(blder.forInput.engageWithLocalCluster, blder.mgr.GetProvider() == nil) {
-			src, err := src.ForCluster("", blder.mgr.GetLocalManager())
+			var zero cluster
+			src, err := src.ForCluster(zero, blder.mgr.GetLocalManager())
 			if err != nil {
 				return err
 			}
@@ -385,21 +386,22 @@ func (blder *TypedBuilder[request]) doWatch() error {
 			opts = append(opts, handler.OnlyControllerOwner())
 		}
 
-		newHdler := func(clusterName string, cl cluster.Cluster) handler.TypedEventHandler[client.Object, request] {
+		newHdler := func(clRef cluster, cl ctrlcluster.Cluster) handler.TypedEventHandler[client.Object, request] {
 			var hdler handler.TypedEventHandler[client.Object, request]
 			reflect.ValueOf(&hdler).Elem().Set(reflect.ValueOf(handler.WithLowPriorityWhenUnchanged(handler.EnqueueRequestForOwner(
 				blder.mgr.GetLocalManager().GetScheme(), cl.GetRESTMapper(),
 				blder.forInput.object,
 				opts...,
 			))))
-			return handlerWithCluster[client.Object, request](clusterName, hdler)
+			return handlerWithCluster[client.Object, cluster, request](clRef, hdler)
 		}
 		allPredicates := append([]predicate.Predicate(nil), blder.globalPredicates...)
 		allPredicates = append(allPredicates, own.predicates...)
-		src := mcsource.TypedKind[client.Object, request](own.object, newHdler, allPredicates...).
+		src := mcsource.TypedKind[client.Object, cluster, request](own.object, newHdler, allPredicates...).
 			WithProjection(blder.project(own.objectProjection))
 		if ptr.Deref(own.engageWithLocalCluster, blder.mgr.GetProvider() == nil) {
-			src, err := src.ForCluster("", blder.mgr.GetLocalManager())
+			var zero cluster
+			src, err := src.ForCluster(zero, blder.mgr.GetLocalManager())
 			if err != nil {
 				return err
 			}
@@ -423,7 +425,8 @@ func (blder *TypedBuilder[request]) doWatch() error {
 		allPredicates = append(allPredicates, w.predicates...)
 		src := mcsource.TypedKind(w.obj, w.handler, allPredicates...).WithProjection(blder.project(w.objectProjection))
 		if ptr.Deref(w.engageWithLocalCluster, blder.mgr.GetProvider() == nil) {
-			src, err := src.ForCluster("", blder.mgr.GetLocalManager())
+			var zero cluster
+			src, err := src.ForCluster(zero, blder.mgr.GetLocalManager())
 			if err != nil {
 				return err
 			}
@@ -445,7 +448,7 @@ func (blder *TypedBuilder[request]) doWatch() error {
 	return nil
 }
 
-func (blder *TypedBuilder[request]) getControllerName(gvk schema.GroupVersionKind, hasGVK bool) (string, error) {
+func (blder *TypedBuilder[cluster, request]) getControllerName(gvk schema.GroupVersionKind, hasGVK bool) (string, error) {
 	if blder.name != "" {
 		return blder.name, nil
 	}
@@ -455,7 +458,7 @@ func (blder *TypedBuilder[request]) getControllerName(gvk schema.GroupVersionKin
 	return strings.ToLower(gvk.Kind), nil
 }
 
-func (blder *TypedBuilder[request]) doController(r reconcile.TypedReconciler[request]) error {
+func (blder *TypedBuilder[cluster, request]) doController(r reconcile.TypedReconciler[request]) error {
 	globalOpts := blder.mgr.GetControllerOptions()
 
 	ctrlOptions := blder.ctrlOptions
@@ -525,7 +528,7 @@ func (blder *TypedBuilder[request]) doController(r reconcile.TypedReconciler[req
 	}
 
 	if blder.newController == nil {
-		blder.newController = mccontroller.NewTyped[request]
+		blder.newController = mccontroller.NewTyped[cluster, request]
 	}
 
 	// Build the controller and return.

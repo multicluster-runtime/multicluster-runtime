@@ -59,10 +59,10 @@ func (w EngageOptions) ApplyToWatches(opts untypedWatchesInput) {
 	}
 }
 
-func (w *WatchesInput[request]) setEngageWithLocalCluster(engage bool) {
+func (w *WatchesInput[cluster, request]) setEngageWithLocalCluster(engage bool) {
 	w.engageWithLocalCluster = &engage
 }
 
-func (w *WatchesInput[request]) setEngageWithProviderClusters(engage bool) {
+func (w *WatchesInput[cluster, request]) setEngageWithProviderClusters(engage bool) {
 	w.engageWithProviderClusters = &engage
 }

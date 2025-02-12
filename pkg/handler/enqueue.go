@@ -32,52 +32,52 @@ var _ handler.TypedEventHandler[client.Object, mcreconcile.Request] = &EnqueueRe
 // EnqueueRequestForObject enqueues a reconcile.Request containing the Name, Namespace and ClusterName of the object that is the source of the Event.
 // (e.g. the created / deleted / updated objects Name and Namespace). handler.EnqueueRequestForObject should be used by multi-cluster
 // Controllers that have associated Resources (e.g. CRDs) to reconcile the associated Resource.
-type EnqueueRequestForObject = TypedEnqueueRequestForObject[client.Object]
+type EnqueueRequestForObject = TypedEnqueueRequestForObject[client.Object, string]
 
-// TypedEnqueueRequestForObject enqueues a reconcile.Request containing the Name, Namespace and ClusterName of the object that is the source of the Event.
+// TypedEnqueueRequestForObject enqueues a reconcile.Request containing the Name, Namespace and Cluster of the object that is the source of the Event.
 // (e.g. the created / deleted / updated objects Name and Namespace).  handler.TypedEnqueueRequestForObject should be used by multi-cluster
 // Controllers that have associated Resources (e.g. CRDs) to reconcile the associated Resource.
 //
 // TypedEnqueueRequestForObject is experimental and subject to future change.
-type TypedEnqueueRequestForObject[object client.Object] struct {
-	ClusterName string
+type TypedEnqueueRequestForObject[object client.Object, cluster comparable] struct {
+	Cluster cluster
 }
 
 // Create implements EventHandler.
-func (e *TypedEnqueueRequestForObject[T]) Create(ctx context.Context, evt event.TypedCreateEvent[T], q workqueue.TypedRateLimitingInterface[mcreconcile.Request]) {
+func (e *TypedEnqueueRequestForObject[T, cluster]) Create(ctx context.Context, evt event.TypedCreateEvent[T], q workqueue.TypedRateLimitingInterface[mcreconcile.TypedRequest[cluster]]) {
 	if isNil(evt.Object) {
 		log.FromContext(ctx).WithName("eventhandler").WithName("EnqueueRequestForObject").
 			Error(nil, "CreateEvent received with no metadata", "event", evt)
 		return
 	}
-	q.Add(mcreconcile.Request{
+	q.Add(mcreconcile.TypedRequest[cluster]{
 		Request: reconcile.Request{NamespacedName: types.NamespacedName{
 			Name:      evt.Object.GetName(),
 			Namespace: evt.Object.GetNamespace(),
 		}},
-		ClusterName: e.ClusterName,
+		Cluster: e.Cluster,
 	})
 }
 
 // Update implements EventHandler.
-func (e *TypedEnqueueRequestForObject[T]) Update(ctx context.Context, evt event.TypedUpdateEvent[T], q workqueue.TypedRateLimitingInterface[mcreconcile.Request]) {
+func (e *TypedEnqueueRequestForObject[T, cluster]) Update(ctx context.Context, evt event.TypedUpdateEvent[T], q workqueue.TypedRateLimitingInterface[mcreconcile.TypedRequest[cluster]]) {
 	switch {
 	case !isNil(evt.ObjectNew):
-		q.Add(mcreconcile.Request{
+		q.Add(mcreconcile.TypedRequest[cluster]{
 			Request: reconcile.Request{NamespacedName: types.NamespacedName{
 				Name:      evt.ObjectNew.GetName(),
 				Namespace: evt.ObjectNew.GetNamespace(),
 			}},
-			ClusterName: e.ClusterName,
+			Cluster: e.Cluster,
 		})
 	case !isNil(evt.ObjectOld):
 		q.Add(
-			mcreconcile.Request{
+			mcreconcile.TypedRequest[cluster]{
 				Request: reconcile.Request{NamespacedName: types.NamespacedName{
 					Name:      evt.ObjectOld.GetName(),
 					Namespace: evt.ObjectOld.GetNamespace(),
 				}},
-				ClusterName: e.ClusterName,
+				Cluster: e.Cluster,
 			})
 	default:
 		log.FromContext(ctx).WithName("eventhandler").WithName("EnqueueRequestForObject").
@@ -86,34 +86,34 @@ func (e *TypedEnqueueRequestForObject[T]) Update(ctx context.Context, evt event.
 }
 
 // Delete implements EventHandler.
-func (e *TypedEnqueueRequestForObject[T]) Delete(ctx context.Context, evt event.TypedDeleteEvent[T], q workqueue.TypedRateLimitingInterface[mcreconcile.Request]) {
+func (e *TypedEnqueueRequestForObject[T, cluster]) Delete(ctx context.Context, evt event.TypedDeleteEvent[T], q workqueue.TypedRateLimitingInterface[mcreconcile.TypedRequest[cluster]]) {
 	if isNil(evt.Object) {
 		log.FromContext(ctx).WithName("eventhandler").WithName("EnqueueRequestForObject").
 			Error(nil, "DeleteEvent received with no metadata", "event", evt)
 		return
 	}
-	q.Add(mcreconcile.Request{
+	q.Add(mcreconcile.TypedRequest[cluster]{
 		Request: reconcile.Request{NamespacedName: types.NamespacedName{
 			Name:      evt.Object.GetName(),
 			Namespace: evt.Object.GetNamespace(),
 		}},
-		ClusterName: e.ClusterName,
+		Cluster: e.Cluster,
 	})
 }
 
 // Generic implements EventHandler.
-func (e *TypedEnqueueRequestForObject[T]) Generic(ctx context.Context, evt event.TypedGenericEvent[T], q workqueue.TypedRateLimitingInterface[mcreconcile.Request]) {
+func (e *TypedEnqueueRequestForObject[T, cluster]) Generic(ctx context.Context, evt event.TypedGenericEvent[T], q workqueue.TypedRateLimitingInterface[mcreconcile.TypedRequest[cluster]]) {
 	if isNil(evt.Object) {
 		log.FromContext(ctx).WithName("eventhandler").WithName("EnqueueRequestForObject").
 			Error(nil, "GenericEvent received with no metadata", "event", evt)
 		return
 	}
-	q.Add(mcreconcile.Request{
+	q.Add(mcreconcile.TypedRequest[cluster]{
 		Request: reconcile.Request{NamespacedName: types.NamespacedName{
 			Name:      evt.Object.GetName(),
 			Namespace: evt.Object.GetNamespace(),
 		}},
-		ClusterName: e.ClusterName,
+		Cluster: e.Cluster,
 	})
 }
 
