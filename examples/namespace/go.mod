@@ -5,7 +5,7 @@ go 1.23.0
 replace github.com/multicluster-runtime/multicluster-runtime => ../..
 
 require (
-	github.com/multicluster-runtime/multicluster-runtime v0.0.0-00010101000000-000000000000
+	github.com/multicluster-runtime/multicluster-runtime v0.20.0-alpha.1
 	github.com/spf13/pflag v1.0.5
 	golang.org/x/sync v0.8.0
 	k8s.io/api v0.32.0
