@@ -17,7 +17,8 @@ limitations under the License.
 package reconcile
 
 import (
-	"k8s.io/apimachinery/pkg/types"
+	"fmt"
+
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
@@ -27,41 +28,49 @@ type Reconciler = reconcile.TypedReconciler[Request]
 // Func is a function that implements the reconcile interface.
 type Func = reconcile.TypedFunc[Request]
 
-// Request contains the information necessary to reconcile a Kubernetes object.  This includes the
-// information to uniquely identify the object - its Name and Namespace.  It does NOT contain information about
-// any specific Event or the object contents itself.
-type Request struct {
+// Request contains the information necessary to reconcile a Kubernetes object.
+// This includes the information to uniquely identify the object - its Name and
+// Namespace. It does NOT contain information about any specific Event or the
+// object contents itself.
+type Request = TypedRequest[string]
+
+// TypedRequest contains the information necessary to reconcile a Kubernetes object.
+// This includes the information to uniquely identify the object - its Name and
+// Namespace. It does NOT contain information about any specific Event or the
+// object contents itself.
+type TypedRequest[cluster comparable] struct {
 	reconcile.Request
 
-	// ClusterName is the name of the cluster that the request belongs to.
-	ClusterName string
+	// Cluster is the name of the cluster that the request belongs to.
+	Cluster cluster
 }
 
 // ClusterAware is an interface for cluster-aware requests.
-type ClusterAware[T any] interface {
+type ClusterAware[cluster comparable, T any] interface {
 	comparable
 
-	// Cluster returns the name of the cluster that the request belongs to.
-	Cluster() string
+	// GetCluster returns the name of the cluster that the request belongs to.
+	GetCluster() cluster
 	// WithCluster sets the name of the cluster that the request belongs to.
-	WithCluster(string) T
+	WithCluster(cluster) T
 }
 
 // String returns the general purpose string representation.
-func (r Request) String() string {
-	if r.ClusterName == "" {
+func (r TypedRequest[cluster]) String() string {
+	var zero cluster
+	if r.Cluster == zero {
 		return r.Request.String()
 	}
-	return "cluster://" + r.ClusterName + string(types.Separator) + r.Request.String()
+	return fmt.Sprintf("cluster://%s/%s", r.Cluster, r.Request)
 }
 
-// Cluster returns the name of the cluster that the request belongs to.
-func (r Request) Cluster() string {
-	return r.ClusterName
+// GetCluster returns the name of the cluster that the request belongs to.
+func (r TypedRequest[cluster]) GetCluster() cluster {
+	return r.Cluster
 }
 
 // WithCluster sets the name of the cluster that the request belongs to.
-func (r Request) WithCluster(name string) Request {
-	r.ClusterName = name
+func (r TypedRequest[cluster]) WithCluster(cl cluster) TypedRequest[cluster] {
+	r.Cluster = cl
 	return r
 }

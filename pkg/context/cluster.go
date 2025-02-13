@@ -28,21 +28,21 @@ type clusterKeyType string
 const clusterKey clusterKeyType = "cluster"
 
 // WithCluster returns a new context with the given cluster.
-func WithCluster(ctx context.Context, cluster string) context.Context {
-	return context.WithValue(ctx, clusterKey, cluster)
+func WithCluster[cluster comparable](ctx context.Context, cl cluster) context.Context {
+	return context.WithValue(ctx, clusterKey, cl)
 }
 
 // ClusterFrom returns the cluster from the context.
-func ClusterFrom(ctx context.Context) (string, bool) {
-	cluster, ok := ctx.Value(clusterKey).(string)
-	return cluster, ok
+func ClusterFrom[cluster comparable](ctx context.Context) (cluster, bool) {
+	cl, ok := ctx.Value(clusterKey).(cluster)
+	return cl, ok
 }
 
 // ReconcilerWithClusterInContext returns a reconciler that sets the cluster name in the
 // context.
 func ReconcilerWithClusterInContext(r reconcile.Reconciler) mcreconcile.Reconciler {
 	return reconcile.TypedFunc[mcreconcile.Request](func(ctx context.Context, req mcreconcile.Request) (reconcile.Result, error) {
-		ctx = WithCluster(ctx, req.ClusterName)
+		ctx = WithCluster(ctx, req.Cluster)
 		return r.Reconcile(ctx, req.Request)
 	})
 }

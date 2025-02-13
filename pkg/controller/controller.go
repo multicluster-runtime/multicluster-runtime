@@ -23,7 +23,7 @@ import (
 
 	"k8s.io/client-go/util/workqueue"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/cluster"
+	ctrlcluster "sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
@@ -37,18 +37,18 @@ import (
 // from source.Sources.  Work is performed through the reconcile.Reconciler for each enqueued item.
 // Work typically is reads and writes Kubernetes objects to make the system state match the state specified
 // in the object Spec.
-type Controller = TypedController[mcreconcile.Request]
+type Controller = TypedController[string, mcreconcile.Request]
 
 // Options are the arguments for creating a new Controller.
 type Options = controller.TypedOptions[mcreconcile.Request]
 
 // TypedController implements an API.
-type TypedController[request comparable] interface {
+type TypedController[cluster, request comparable] interface {
 	controller.TypedController[request]
-	multicluster.Aware
+	multicluster.Aware[cluster]
 
 	// MultiClusterWatch watches the provided Source.
-	MultiClusterWatch(src mcsource.TypedSource[client.Object, request]) error
+	MultiClusterWatch(src mcsource.TypedSource[client.Object, cluster, request]) error
 }
 
 // New returns a new Controller registered with the Manager.  The Manager will ensure that shared Caches have
@@ -56,14 +56,14 @@ type TypedController[request comparable] interface {
 //
 // The name must be unique as it is used to identify the controller in metrics and logs.
 func New(name string, mgr mcmanager.Manager, options Options) (Controller, error) {
-	return NewTyped(name, mgr, options)
+	return NewTyped[string, mcreconcile.Request](name, mgr, options)
 }
 
 // NewTyped returns a new typed controller registered with the Manager,
 //
 // The name must be unique as it is used to identify the controller in metrics and logs.
-func NewTyped[request comparable](name string, mgr mcmanager.Manager, options controller.TypedOptions[request]) (TypedController[request], error) {
-	c, err := NewTypedUnmanaged(name, mgr, options)
+func NewTyped[cluster, request comparable](name string, mgr mcmanager.TypedManager[cluster], options controller.TypedOptions[request]) (TypedController[cluster, request], error) {
+	c, err := NewTypedUnmanaged[cluster, request](name, mgr, options)
 	if err != nil {
 		return nil, err
 	}
@@ -77,85 +77,85 @@ func NewTyped[request comparable](name string, mgr mcmanager.Manager, options co
 //
 // The name must be unique as it is used to identify the controller in metrics and logs.
 func NewUnmanaged(name string, mgr mcmanager.Manager, options Options) (Controller, error) {
-	return NewTypedUnmanaged[mcreconcile.Request](name, mgr, options)
+	return NewTypedUnmanaged[string, mcreconcile.Request](name, mgr, options)
 }
 
 // NewTypedUnmanaged returns a new typed controller without adding it to the manager.
 //
 // The name must be unique as it is used to identify the controller in metrics and logs.
-func NewTypedUnmanaged[request comparable](name string, mgr mcmanager.Manager, options controller.TypedOptions[request]) (TypedController[request], error) {
+func NewTypedUnmanaged[cluster, request comparable](name string, mgr mcmanager.TypedManager[cluster], options controller.TypedOptions[request]) (TypedController[cluster, request], error) {
 	c, err := controller.NewTypedUnmanaged[request](name, mgr.GetLocalManager(), options)
 	if err != nil {
 		return nil, err
 	}
-	return &mcController[request]{
+	return &mcController[cluster, request]{
 		TypedController: c,
-		clusters:        make(map[string]engagedCluster),
+		clusters:        make(map[cluster]engagedCluster[cluster]),
 	}, nil
 }
 
-var _ TypedController[mcreconcile.Request] = &mcController[mcreconcile.Request]{}
+var _ TypedController[string, mcreconcile.Request] = &mcController[string, mcreconcile.Request]{}
 
-type mcController[request comparable] struct {
+type mcController[cluster, request comparable] struct {
 	controller.TypedController[request]
 
 	lock     sync.Mutex
-	clusters map[string]engagedCluster
-	sources  []mcsource.TypedSource[client.Object, request]
+	clusters map[cluster]engagedCluster[cluster]
+	sources  []mcsource.TypedSource[client.Object, cluster, request]
 }
 
-type engagedCluster struct {
-	name    string
-	cluster cluster.Cluster
+type engagedCluster[cluster comparable] struct {
+	clRef   cluster
+	cluster ctrlcluster.Cluster
 }
 
-func (c *mcController[request]) Engage(ctx context.Context, name string, cl cluster.Cluster) error {
+func (c *mcController[cluster, request]) Engage(ctx context.Context, clRef cluster, cl ctrlcluster.Cluster) error {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
-	if old, ok := c.clusters[name]; ok && old.cluster == cl {
+	if old, ok := c.clusters[clRef]; ok && old.cluster == cl {
 		return nil
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
 
 	// pass through in case the controller itself is cluster aware
-	if ctrl, ok := c.TypedController.(multicluster.Aware); ok {
-		if err := ctrl.Engage(ctx, name, cl); err != nil {
+	if ctrl, ok := c.TypedController.(multicluster.Aware[cluster]); ok {
+		if err := ctrl.Engage(ctx, clRef, cl); err != nil {
 			return err
 		}
 	}
 
 	// engage cluster aware instances
 	for _, aware := range c.sources {
-		src, err := aware.ForCluster(name, cl)
+		src, err := aware.ForCluster(clRef, cl)
 		if err != nil {
 			cancel()
-			return fmt.Errorf("failed to engage for cluster %q: %w", name, err)
+			return fmt.Errorf("failed to engage for cluster %q: %w", clRef, err)
 		}
 		if err := c.TypedController.Watch(startWithinContext[request](ctx, src)); err != nil {
 			cancel()
-			return fmt.Errorf("failed to watch for cluster %q: %w", name, err)
+			return fmt.Errorf("failed to watch for cluster %q: %w", clRef, err)
 		}
 	}
 
-	ec := engagedCluster{
-		name:    name,
+	ec := engagedCluster[cluster]{
+		clRef:   clRef,
 		cluster: cl,
 	}
-	c.clusters[name] = ec
+	c.clusters[clRef] = ec
 	go func() {
 		c.lock.Lock()
 		defer c.lock.Unlock()
-		if c.clusters[name] == ec {
-			delete(c.clusters, name)
+		if c.clusters[clRef] == ec {
+			delete(c.clusters, clRef)
 		}
 	}()
 
 	return nil
 }
 
-func (c *mcController[request]) MultiClusterWatch(src mcsource.TypedSource[client.Object, request]) error {
+func (c *mcController[cluster, request]) MultiClusterWatch(src mcsource.TypedSource[client.Object, cluster, request]) error {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 

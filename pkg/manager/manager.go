@@ -27,7 +27,7 @@ import (
 
 	"k8s.io/client-go/rest"
 
-	"sigs.k8s.io/controller-runtime/pkg/cluster"
+	ctrlcluster "sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/config"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -41,7 +41,7 @@ var _ manager.Manager = &probe{}
 
 type probe struct {
 	Manager
-	cluster.Cluster
+	ctrlcluster.Cluster
 }
 
 // Add adds a runnable.
@@ -54,14 +54,17 @@ func (p *probe) Start(_ context.Context) error {
 	return nil
 }
 
-// Manager is a multi-cluster-aware manager, like the controller-runtime Cluster,
+// Manager is a TypedManager with a string as the cluster type.
+type Manager = TypedManager[string]
+
+// TypedManager is a multi-cluster-aware manager, like the controller-runtime Cluster,
 // but without the direct cluster.Cluster methods.
-type Manager interface {
+type TypedManager[cluster comparable] interface {
 	// Add will set requested dependencies on the component, and cause the component to be
 	// started when Start is called.
 	// Depending on if a Runnable implements LeaderElectionRunnable interface, a Runnable can be run in either
 	// non-leaderelection mode (always running) or leader election mode (managed by leader election if enabled).
-	Add(Runnable) error
+	Add(Runnable[cluster]) error
 
 	// Elected is closed when this manager is elected leader of a group of
 	// managers, either because it won a leader election or because no leader
@@ -104,49 +107,59 @@ type Manager interface {
 	// returns an existing cluster if it has been created before.
 	// If no cluster is known to the provider under the given cluster name,
 	// an error should be returned.
-	GetCluster(ctx context.Context, clusterName string) (cluster.Cluster, error)
+	GetCluster(ctx context.Context, cl cluster) (ctrlcluster.Cluster, error)
 
 	// ClusterFromContext returns the default cluster set in the context.
-	ClusterFromContext(ctx context.Context) (cluster.Cluster, error)
+	ClusterFromContext(ctx context.Context) (ctrlcluster.Cluster, error)
 
 	// GetLocalManager returns the underlying controller-runtime manager of the host.
 	GetLocalManager() manager.Manager
 
 	// GetProvider returns the multicluster provider, or nil if it is not set.
-	GetProvider() multicluster.Provider
+	GetProvider() multicluster.TypedProvider[cluster]
 
-	multicluster.Aware
+	multicluster.Aware[cluster]
 }
 
 // Runnable allows a component to be started.
 // It's very important that Start blocks until
 // it's done running.
-type Runnable interface {
+type Runnable[cluster comparable] interface {
 	manager.Runnable
-	multicluster.Aware
+	multicluster.Aware[cluster]
 }
 
-var _ Manager = &mcManager{}
+var _ Manager = &mcManager[string]{}
 
-type mcManager struct {
+type mcManager[cluster comparable] struct {
 	manager.Manager
-	provider multicluster.Provider
+	provider multicluster.TypedProvider[cluster]
 
-	mcRunnables []multicluster.Aware
+	mcRunnables []multicluster.Aware[cluster]
 }
 
 // New returns a new Manager for creating Controllers.
 func New(config *rest.Config, provider multicluster.Provider, opts manager.Options) (Manager, error) {
-	mgr, err := manager.New(config, opts)
-	if err != nil {
-		return nil, err
-	}
-	return WithMultiCluster(mgr, provider)
+	return NewTyped[string](config, provider, opts)
 }
 
 // WithMultiCluster wraps a host manager to run multi-cluster controllers.
 func WithMultiCluster(mgr manager.Manager, provider multicluster.Provider) (Manager, error) {
-	return &mcManager{
+	return TypedWithMultiCluster[string](mgr, provider)
+}
+
+// NewTyped returns a new Manager for creating Controllers.
+func NewTyped[cluster comparable](config *rest.Config, provider multicluster.TypedProvider[cluster], opts manager.Options) (TypedManager[cluster], error) {
+	mgr, err := manager.New(config, opts)
+	if err != nil {
+		return nil, err
+	}
+	return TypedWithMultiCluster[cluster](mgr, provider)
+}
+
+// TypedWithMultiCluster wraps a host manager to run multi-cluster controllers.
+func TypedWithMultiCluster[cluster comparable](mgr manager.Manager, provider multicluster.TypedProvider[cluster]) (TypedManager[cluster], error) {
+	return &mcManager[cluster]{
 		Manager:  mgr,
 		provider: provider,
 	}, nil
@@ -156,38 +169,39 @@ func WithMultiCluster(mgr manager.Manager, provider multicluster.Provider) (Mana
 // returns an existing cluster if it has been created before.
 // If no cluster is known to the provider under the given cluster name,
 // an error should be returned.
-func (m *mcManager) GetCluster(ctx context.Context, clusterName string) (cluster.Cluster, error) {
-	if clusterName == "" {
+func (m *mcManager[cluster]) GetCluster(ctx context.Context, cl cluster) (ctrlcluster.Cluster, error) {
+	var zero cluster
+	if cl == zero {
 		return m.Manager, nil
 	}
 	if m.provider == nil {
-		return nil, fmt.Errorf("no multicluster provider set, but cluster %q passed", clusterName)
+		return nil, fmt.Errorf("no multicluster provider set, but cluster %q passed", cl)
 	}
-	return m.provider.Get(ctx, clusterName)
+	return m.provider.Get(ctx, cl)
 }
 
 // ClusterFromContext returns the default cluster set in the context.
-func (m *mcManager) ClusterFromContext(ctx context.Context) (cluster.Cluster, error) {
-	clusterName, ok := mccontext.ClusterFrom(ctx)
+func (m *mcManager[cluster]) ClusterFromContext(ctx context.Context) (ctrlcluster.Cluster, error) {
+	cl, ok := mccontext.ClusterFrom[cluster](ctx)
 	if !ok {
 		return nil, fmt.Errorf("no cluster set in context, use ReconcilerWithCluster helper when building the controller")
 	}
-	return m.GetCluster(ctx, clusterName)
+	return m.GetCluster(ctx, cl)
 }
 
 // GetLocalManager returns the underlying controller-runtime manager of the host.
-func (m *mcManager) GetLocalManager() manager.Manager {
+func (m *mcManager[cluster]) GetLocalManager() manager.Manager {
 	return m.Manager
 }
 
 // GetProvider returns the multicluster provider, or nil if it is not set.
-func (m *mcManager) GetProvider() multicluster.Provider {
+func (m *mcManager[cluster]) GetProvider() multicluster.TypedProvider[cluster] {
 	return m.provider
 }
 
 // Add will set requested dependencies on the component, and cause the component to be
 // started when Start is called.
-func (m *mcManager) Add(r Runnable) (err error) {
+func (m *mcManager[cluster]) Add(r Runnable[cluster]) (err error) {
 	m.mcRunnables = append(m.mcRunnables, r)
 	defer func() {
 		if err != nil {
@@ -200,12 +214,12 @@ func (m *mcManager) Add(r Runnable) (err error) {
 
 // Engage gets called when the component should start operations for the given
 // Cluster. ctx is cancelled when the cluster is disengaged.
-func (m *mcManager) Engage(ctx context.Context, name string, cl cluster.Cluster) error {
+func (m *mcManager[cluster]) Engage(ctx context.Context, clRef cluster, cl ctrlcluster.Cluster) error {
 	ctx, cancel := context.WithCancel(ctx)
 	for _, r := range m.mcRunnables {
-		if err := r.Engage(ctx, name, cl); err != nil {
+		if err := r.Engage(ctx, clRef, cl); err != nil {
 			cancel()
-			return fmt.Errorf("failed to engage cluster %q: %w", name, err)
+			return fmt.Errorf("failed to engage cluster %q: %w", clRef, err)
 		}
 	}
 	return nil

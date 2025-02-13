@@ -19,12 +19,12 @@ package multicluster
 import (
 	"context"
 
-	"sigs.k8s.io/controller-runtime/pkg/cluster"
+	ctrlcluster "sigs.k8s.io/controller-runtime/pkg/cluster"
 )
 
 // Aware is an interface that can be implemented by components that
 // can engage and disengage when clusters are added or removed at runtime.
-type Aware interface {
+type Aware[cluster comparable] interface {
 	// Engage gets called when the component should start operations for the given Cluster.
 	// The given context is tied to the Cluster's lifecycle and will be cancelled when the
 	// Cluster is removed or an error occurs.
@@ -38,10 +38,13 @@ type Aware interface {
 	//            __||____/ /_
 	//           |___         \
 	//               `--------'
-	Engage(context.Context, string, cluster.Cluster) error
+	Engage(context.Context, cluster, ctrlcluster.Cluster) error
 }
 
-// Provider allows to retrieve clusters by name. The provider is responsible for discovering
+// Provider is the TypedProvider with string as the cluster type.
+type Provider = TypedProvider[string]
+
+// TypedProvider allows to retrieve clusters by name. The provider is responsible for discovering
 // and managing the lifecycle of each cluster, calling `Engage` on the manager
 // it is run against whenever a new cluster is discovered and cancelling the
 // context used on engage when a cluster is unregistered.
@@ -49,10 +52,10 @@ type Aware interface {
 // Example: A Cluster API provider would be responsible for discovering and
 // managing clusters that are backed by Cluster API resources, which can live
 // in multiple namespaces in a single management cluster.
-type Provider interface {
+type TypedProvider[cluster comparable] interface {
 	// Get returns a cluster for the given identifying cluster name. Get
 	// returns an existing cluster if it has been created before.
 	// If no cluster is known to the provider under the given cluster name,
 	// an error should be returned.
-	Get(ctx context.Context, clusterName string) (cluster.Cluster, error)
+	Get(ctx context.Context, cl cluster) (ctrlcluster.Cluster, error)
 }
