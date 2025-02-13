@@ -29,4 +29,5 @@ Run reconcilers that listen to some cluster(s) and operate other clusters.
 1. multicluster-runtime is a friendly ❤️ extension of controller-runtime.
 2. multicluster-runtime loves ❤️ contributions.
 3. multicluster-runtime is following controller-runtime releases.
-4. multicluster-runtime is provider agnostic, but may contain providers with its own go.mod files and dedicated OWNERS files.
+4. multicluster-runtime is developed as if it was part of controller-runtime (quality standards, naming, style).
+5. multicluster-runtime is provider agnostic, but may contain providers with its own go.mod files and dedicated OWNERS files.
