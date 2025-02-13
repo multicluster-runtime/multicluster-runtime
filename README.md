@@ -24,3 +24,9 @@ This is the most simple case. Many existing reconcilers can easily adapted to wo
 Run reconcilers that listen to some cluster(s) and operate other clusters.
 ![multi-cluster topologies multi](https://github.com/user-attachments/assets/d7e37c39-66e3-4912-89ac-5441f0ad5669)
 
+## Principles
+
+1. multicluster-runtime is a friendly ❤️ extension of controller-runtime.
+2. multicluster-runtime loves ❤️ contributions.
+3. multicluster-runtime is following controller-runtime releases.
+4. multicluster-runtime is provider agnostic.
