@@ -6,17 +6,17 @@ following controller-runtime releases. The process is as follows:
 1. An issue is proposing a new release with a changelog since the last release.
 1. All [OWNERS](OWNERS) must LGTM this release. 
 1. Ensure that all go.mods point to the relevant Kubernetes and controller-runtime versions.
-1. An OWNER runs `git tag -s $VERSION` and pushes the tag with `git push $VERSION`.
+1. An OWNER runs `git tag -s $VERSION` and pushes the tag with `git push origin $VERSION`.
    `$VERSION` should be a valid semver version for the main directory, with the
    major and minor versions matching those of controller-runtime, and the patch
    release being multicluster-runtime specific. Use `-pre-1` and `-rc-1` suffixes
    to indicate pre-release versions, with `rc` meaning that this might be the final
    release if no blockers are found.
 1. Ensure that the sub-go-module go.mods point to freshly tagged and pushed
-   multi-cluster-runtime versions. This will require a commit to the release branch.
+   multi-cluster-runtime versions. This will require a commit to the branch.
 1. Create a release branch with `git checkout -b release-$MAJOR.$MINOR` from `$VERSION`
    and push it to Github `git push origin release-$MAJOR.$MINOR`.
-1. Repeat the `git tag -s sub/go/module/$VERSION` and `git push sub/go/module/$VERSION` 
+1. Repeat the `git tag -s sub/go/module/$VERSION` and `git push origin sub/go/module/$VERSION` 
    commands.
 1. The main tag is promoted to a release on GitHub with the changelog attached.
 1. The release issue is closed.
