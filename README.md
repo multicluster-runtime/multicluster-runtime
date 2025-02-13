@@ -5,7 +5,7 @@
 ## Multi cluster controllers with controller-runtime
 
 - **no fork, no go mod replace**: clean extension to [upstream controller-runtime](https://github.com/kubernetes-sigs/controller-runtime).
-- **universal**: cluster-api. kcp. BYO. Cluster providers make the controller-runtime multi-cluster aware.
+- **universal**: kind, [Gardener](https://gardener.cloud/) (tbd), [cluster-api](https://github.com/kubernetes-sigs/cluster-api) (tbd). kcp. BYO. Cluster providers make the controller-runtime multi-cluster aware.
 - **seamless**: add multi-cluster support without compromising on single-cluster. Run in either mode without code changes to the reconcilers. 
 
 > [!WARNING]  
