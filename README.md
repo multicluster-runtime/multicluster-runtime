@@ -9,7 +9,7 @@
 - **seamless**: add multi-cluster support without compromising on single-cluster. Run in either mode without code changes to the reconcilers. 
 
 > [!WARNING]  
-> multicluster-runtime is currently alpha quality before its first stable and generally consumable release.
+> multicluster-runtime is currently alpha quality before its first stable and generally consumable release. Use at your own risk.
 
 ## Uniform Reconcilers
 
