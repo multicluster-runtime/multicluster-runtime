@@ -2,8 +2,6 @@ module github.com/multicluster-runtime/multicluster-runtime
 
 go 1.23.0
 
-toolchain go1.23.4
-
 require (
 	github.com/go-logr/logr v1.4.2
 	github.com/onsi/ginkgo/v2 v2.21.0
