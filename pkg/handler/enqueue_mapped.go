@@ -14,19 +14,21 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package builder
+package handler
 
 import (
-	mchandler "github.com/multicluster-runtime/multicluster-runtime/pkg/handler"
-	mcreconcile "github.com/multicluster-runtime/multicluster-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 )
 
-// StaticHandler returns a handler constructor with a static cluster value.
-func StaticHandler[object client.Object, request comparable](h handler.TypedEventHandler[object, mcreconcile.TypedRequest[request]]) mchandler.TypedEventHandlerFunc[object, request] {
-	return func(_ string, _ cluster.Cluster) handler.TypedEventHandler[object, mcreconcile.TypedRequest[request]] {
-		return h
-	}
+// EnqueueRequestsFromMapFunc wraps handler.EnqueueRequestsFromMapFunc to be
+// compatible with multi-cluster.
+func EnqueueRequestsFromMapFunc(fn handler.MapFunc) EventHandlerFunc {
+	return WithCluster(handler.EnqueueRequestsFromMapFunc(fn))
+}
+
+// TypedEnqueueRequestsFromMapFunc wraps handler.TypedEnqueueRequestsFromMapFunc
+// to be compatible with multi-cluster.
+func TypedEnqueueRequestsFromMapFunc[object client.Object, request comparable](fn handler.TypedMapFunc[object, request]) TypedEventHandlerFunc[object, request] {
+	return TypedWithCluster[object, request](handler.TypedEnqueueRequestsFromMapFunc[object, request](fn))
 }

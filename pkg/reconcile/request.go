@@ -17,51 +17,37 @@ limitations under the License.
 package reconcile
 
 import (
+	"fmt"
+
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
-// Reconciler is a type that implements the reconcile interface.
-type Reconciler = reconcile.TypedReconciler[Request]
+// Request wraps a reconcile.Request and adds the cluster name.
+type Request = TypedRequest[reconcile.Request]
 
-// Func is a function that implements the reconcile interface.
-type Func = reconcile.TypedFunc[Request]
+// TypedRequest wraps a request and adds the cluster name.
+type TypedRequest[request comparable] struct {
+	Request request
 
-// Request contains the information necessary to reconcile a Kubernetes object.  This includes the
-// information to uniquely identify the object - its Name and Namespace.  It does NOT contain information about
-// any specific Event or the object contents itself.
-type Request struct {
-	reconcile.Request
-
-	// ClusterName is the name of the cluster that the request belongs to.
 	ClusterName string
 }
 
-// ClusterAware is an interface for cluster-aware requests.
-type ClusterAware[T any] interface {
-	comparable
-
-	// Cluster returns the name of the cluster that the request belongs to.
-	Cluster() string
-	// WithCluster sets the name of the cluster that the request belongs to.
-	WithCluster(string) T
-}
-
 // String returns the general purpose string representation.
-func (r Request) String() string {
+func (r TypedRequest[request]) String() string {
 	if r.ClusterName == "" {
-		return r.Request.String()
+		return fmt.Sprintf("%s", r.Request)
 	}
-	return "cluster://" + r.ClusterName + string(types.Separator) + r.Request.String()
+	return "cluster://" + r.ClusterName + string(types.Separator) + fmt.Sprintf("%s", r.Request)
 }
 
 // Cluster returns the name of the cluster that the request belongs to.
-func (r Request) Cluster() string {
+func (r TypedRequest[request]) Cluster() string {
 	return r.ClusterName
 }
 
 // WithCluster sets the name of the cluster that the request belongs to.
-func (r Request) WithCluster(name string) Request {
+func (r TypedRequest[request]) WithCluster(name string) TypedRequest[request] {
 	r.ClusterName = name
 	return r
 }

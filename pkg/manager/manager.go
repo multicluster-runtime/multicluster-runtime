@@ -54,6 +54,9 @@ func (p *probe) Start(_ context.Context) error {
 	return nil
 }
 
+// LocalCluster is the name of the local cluster.
+const LocalCluster = ""
+
 // Manager is a multi-cluster-aware manager, like the controller-runtime Cluster,
 // but without the direct cluster.Cluster methods.
 type Manager interface {
@@ -118,6 +121,9 @@ type Manager interface {
 	multicluster.Aware
 }
 
+// Options are the arguments for creating a new Manager.
+type Options = manager.Options
+
 // Runnable allows a component to be started.
 // It's very important that Start blocks until
 // it's done running.
@@ -135,7 +141,9 @@ type mcManager struct {
 	mcRunnables []multicluster.Aware
 }
 
-// New returns a new Manager for creating Controllers.
+// New returns a new Manager for creating Controllers. The provider is used to
+// discover and manage clusters. With a provider set to nil, the manager will
+// behave like a regular controller-runtime manager.
 func New(config *rest.Config, provider multicluster.Provider, opts manager.Options) (Manager, error) {
 	mgr, err := manager.New(config, opts)
 	if err != nil {
@@ -157,7 +165,7 @@ func WithMultiCluster(mgr manager.Manager, provider multicluster.Provider) (Mana
 // If no cluster is known to the provider under the given cluster name,
 // an error should be returned.
 func (m *mcManager) GetCluster(ctx context.Context, clusterName string) (cluster.Cluster, error) {
-	if clusterName == "" {
+	if clusterName == LocalCluster {
 		return m.Manager, nil
 	}
 	if m.provider == nil {

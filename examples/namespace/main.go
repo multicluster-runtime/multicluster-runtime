@@ -109,7 +109,7 @@ func main() {
 		entryLog.Error(err, "unable to set up provider")
 		os.Exit(1)
 	}
-	provider := namespace.NewNamespacedClusterProvider(cl)
+	provider := namespace.New(cl)
 
 	// Setup a cluster-aware Manager, with the provider to lookup clusters.
 	entryLog.Info("Setting up cluster-aware manager")
@@ -153,7 +153,7 @@ func main() {
 
 	entryLog.Info("Starting provider")
 	go func() {
-		if err := ignoreCanceled(provider.Start(ctx, mgr)); err != nil {
+		if err := ignoreCanceled(provider.Run(ctx, mgr)); err != nil {
 			entryLog.Error(err, "failed to start provider")
 			os.Exit(1)
 		}
