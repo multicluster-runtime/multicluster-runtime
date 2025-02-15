@@ -43,7 +43,7 @@ type Controller = TypedController[mcreconcile.Request]
 type Options = controller.TypedOptions[mcreconcile.Request]
 
 // TypedController implements an API.
-type TypedController[request comparable] interface {
+type TypedController[request mcreconcile.ClusterAware] interface {
 	controller.TypedController[request]
 	multicluster.Aware
 
@@ -62,7 +62,7 @@ func New(name string, mgr mcmanager.Manager, options Options) (Controller, error
 // NewTyped returns a new typed controller registered with the Manager,
 //
 // The name must be unique as it is used to identify the controller in metrics and logs.
-func NewTyped[request comparable](name string, mgr mcmanager.Manager, options controller.TypedOptions[request]) (TypedController[request], error) {
+func NewTyped[request mcreconcile.ClusterAware](name string, mgr mcmanager.Manager, options controller.TypedOptions[request]) (TypedController[request], error) {
 	c, err := NewTypedUnmanaged(name, mgr, options)
 	if err != nil {
 		return nil, err
@@ -83,7 +83,7 @@ func NewUnmanaged(name string, mgr mcmanager.Manager, options Options) (Controll
 // NewTypedUnmanaged returns a new typed controller without adding it to the manager.
 //
 // The name must be unique as it is used to identify the controller in metrics and logs.
-func NewTypedUnmanaged[request comparable](name string, mgr mcmanager.Manager, options controller.TypedOptions[request]) (TypedController[request], error) {
+func NewTypedUnmanaged[request mcreconcile.ClusterAware](name string, mgr mcmanager.Manager, options controller.TypedOptions[request]) (TypedController[request], error) {
 	c, err := controller.NewTypedUnmanaged[request](name, mgr.GetLocalManager(), options)
 	if err != nil {
 		return nil, err
@@ -96,7 +96,7 @@ func NewTypedUnmanaged[request comparable](name string, mgr mcmanager.Manager, o
 
 var _ TypedController[mcreconcile.Request] = &mcController[mcreconcile.Request]{}
 
-type mcController[request comparable] struct {
+type mcController[request mcreconcile.ClusterAware] struct {
 	controller.TypedController[request]
 
 	lock     sync.Mutex
@@ -178,7 +178,7 @@ func (c *mcController[request]) MultiClusterWatch(src mcsource.TypedSource[clien
 	return nil
 }
 
-func startWithinContext[request comparable](ctx context.Context, src source.TypedSource[request]) source.TypedSource[request] {
+func startWithinContext[request mcreconcile.ClusterAware](ctx context.Context, src source.TypedSource[request]) source.TypedSource[request] {
 	return source.TypedFunc[request](func(ctlCtx context.Context, w workqueue.TypedRateLimitingInterface[request]) error {
 		ctx, cancel := context.WithCancel(ctx)
 		go func() {
