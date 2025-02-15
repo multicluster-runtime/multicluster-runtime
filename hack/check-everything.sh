@@ -36,8 +36,7 @@ header_text "installing envtest tools@${ENVTEST_K8S_VERSION} with setup-envtest 
 tmp_bin=/tmp/cr-tests-bin
 (
     # don't presume to install for the user
-    cd ${hack_dir}/../tools/setup-envtest
-    GOBIN=${tmp_bin} go install .
+    GOBIN=${tmp_bin} go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
 )
 export KUBEBUILDER_ASSETS="$(${tmp_bin}/setup-envtest use --use-env -p path "${ENVTEST_K8S_VERSION}")"
 
@@ -45,8 +44,8 @@ export KUBEBUILDER_ASSETS="$(${tmp_bin}/setup-envtest use --use-env -p path "${E
 ${hack_dir}/test-all.sh
 
 header_text "confirming examples compile (via go install)"
-go install ${MOD_OPT} ./examples/builtins
-go install ${MOD_OPT} ./examples/crd
+pushd examples/kind; go install ${MOD_OPT} .; popd
+pushd examples/namespace; go install ${MOD_OPT} .; popd
 
 echo "passed"
 exit 0
