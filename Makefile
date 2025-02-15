@@ -52,8 +52,8 @@ TOOLS_BIN_DIR := $(abspath $(TOOLS_DIR)/bin)
 GOLANGCI_LINT := $(abspath $(TOOLS_BIN_DIR)/golangci-lint)
 GO_APIDIFF := $(TOOLS_BIN_DIR)/go-apidiff
 CONTROLLER_GEN := $(TOOLS_BIN_DIR)/controller-gen
-ENVTEST_DIR := $(abspath tools/setup-envtest)
-SCRATCH_ENV_DIR := $(abspath examples/scratch-env)
+EXAMPLES_KIND_DIR := $(abspath examples/kind)
+PROVIDERS_KIND_DIR := $(abspath providers/kind)
 GO_INSTALL := ./hack/go-install.sh
 
 # The help will print out all targets with their descriptions organized bellow their categories. The categories are represented by `##@` and the target descriptions by `##`.
@@ -73,8 +73,7 @@ test: test-tools ## Run the script check-everything.sh which will check all.
 	TRACE=1 ./hack/check-everything.sh
 
 .PHONY: test-tools
-test-tools: ## tests the tools codebase (setup-envtest)
-	cd tools/setup-envtest && go test ./...
+test-tools:
 
 ## --------------------------------------
 ## Binaries
@@ -118,7 +117,8 @@ $(GO_MOD_CHECK): # Build gomodcheck
 .PHONY: lint
 lint: $(GOLANGCI_LINT) ## Lint codebase
 	$(GOLANGCI_LINT) run -v $(GOLANGCI_LINT_EXTRA_ARGS)
-	cd tools/setup-envtest; $(GOLANGCI_LINT) run -v $(GOLANGCI_LINT_EXTRA_ARGS)
+	cd examples/kind; $(GOLANGCI_LINT) run -v $(GOLANGCI_LINT_EXTRA_ARGS)
+	cd proviers/kind; $(GOLANGCI_LINT) run -v $(GOLANGCI_LINT_EXTRA_ARGS)
 
 .PHONY: lint-fix
 lint-fix: $(GOLANGCI_LINT) ## Lint the codebase and run auto-fixers if supported by the linter.
@@ -132,50 +132,8 @@ lint-fix: $(GOLANGCI_LINT) ## Lint the codebase and run auto-fixers if supported
 modules: ## Runs go mod to ensure modules are up to date.
 	go mod tidy
 	cd $(TOOLS_DIR); go mod tidy
-	cd $(ENVTEST_DIR); go mod tidy
-	cd $(SCRATCH_ENV_DIR); go mod tidy
-
-## --------------------------------------
-## Release
-## --------------------------------------
-
-RELEASE_DIR := tools/setup-envtest/out
-
-.PHONY: $(RELEASE_DIR)
-$(RELEASE_DIR):
-	mkdir -p $(RELEASE_DIR)/
-
-.PHONY: release
-release: clean-release $(RELEASE_DIR) ## Build release.
-	@if ! [ -z "$$(git status --porcelain)" ]; then echo "Your local git repository contains uncommitted changes, use git clean before proceeding."; exit 1; fi
-
-	# Build binaries first.
-	$(MAKE) release-binaries
-
-.PHONY: release-binaries
-release-binaries: ## Build release binaries.
-	RELEASE_BINARY=setup-envtest-linux-amd64       GOOS=linux   GOARCH=amd64   $(MAKE) release-binary
-	RELEASE_BINARY=setup-envtest-linux-arm64       GOOS=linux   GOARCH=arm64   $(MAKE) release-binary
-	RELEASE_BINARY=setup-envtest-linux-ppc64le     GOOS=linux   GOARCH=ppc64le $(MAKE) release-binary
-	RELEASE_BINARY=setup-envtest-linux-s390x       GOOS=linux   GOARCH=s390x   $(MAKE) release-binary
-	RELEASE_BINARY=setup-envtest-darwin-amd64      GOOS=darwin  GOARCH=amd64   $(MAKE) release-binary
-	RELEASE_BINARY=setup-envtest-darwin-arm64      GOOS=darwin  GOARCH=arm64   $(MAKE) release-binary
-	RELEASE_BINARY=setup-envtest-windows-amd64.exe GOOS=windows GOARCH=amd64   $(MAKE) release-binary
-
-.PHONY: release-binary
-release-binary: $(RELEASE_DIR)
-	docker run \
-		--rm \
-		-e CGO_ENABLED=0 \
-		-e GOOS=$(GOOS) \
-		-e GOARCH=$(GOARCH) \
-		-e GOCACHE=/tmp/ \
-		--user $$(id -u):$$(id -g) \
-		-v "$$(pwd):/workspace$(DOCKER_VOL_OPTS)" \
-		-w /workspace/tools/setup-envtest \
-		golang:$(GO_VERSION) \
-		go build -a -trimpath -ldflags "-extldflags '-static'" \
-		-o ./out/$(RELEASE_BINARY) ./
+	cd $(EXAMPLES_KIND_DIR); go mod tidy
+	cd $(PROVIDERS_KIND_DIR); go mod tidy
 
 ## --------------------------------------
 ## Cleanup / Verification
@@ -196,7 +154,7 @@ clean-release: ## Remove the release folder
 
 .PHONY: verify-modules
 verify-modules: modules $(GO_MOD_CHECK) ## Verify go modules are up to date
-	@if !(git diff --quiet HEAD -- go.sum go.mod $(TOOLS_DIR)/go.mod $(TOOLS_DIR)/go.sum $(ENVTEST_DIR)/go.mod $(ENVTEST_DIR)/go.sum $(SCRATCH_ENV_DIR)/go.sum); then \
+	@if !(git diff --quiet HEAD -- go.sum go.mod $(TOOLS_DIR)/go.mod $(TOOLS_DIR)/go.sum $(EXAMPLES_KIND_DIR)/go.mod $(EXAMPLES_KIND_DIR)/go.sum  $(PROVIDERS_KIND_DIR)/go.mod $(PROVIDERS_KIND_DIR)/go.sum); then \
 		git diff; \
 		echo "go module files are out of date, please run 'make modules'"; exit 1; \
 	fi

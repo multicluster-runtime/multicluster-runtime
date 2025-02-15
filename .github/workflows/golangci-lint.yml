@@ -21,7 +21,8 @@ jobs:
       matrix:
         working-directory:
           - ""
-          - tools/setup-envtest
+          - examples/kind
+          - providers/kind
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # tag=v4.2.2
       - name: Calculate go version

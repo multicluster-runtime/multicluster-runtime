@@ -61,31 +61,38 @@ func WithClusterNameIndex() cluster.Option {
 	}
 }
 
+// NamespacedCluster is a cluster that operates on a specific namespace.
 type NamespacedCluster struct {
 	clusterName string
 	cluster.Cluster
 }
 
+// Name returns the name of the cluster.
 func (c *NamespacedCluster) Name() string {
 	return c.clusterName
 }
 
+// GetCache returns a cache.Cache.
 func (c *NamespacedCluster) GetCache() cache.Cache {
 	return &NamespacedCache{clusterName: c.clusterName, Cache: c.Cluster.GetCache()}
 }
 
+// GetClient returns a client scoped to the namespace.
 func (c *NamespacedCluster) GetClient() client.Client {
 	return &NamespacedClient{clusterName: c.clusterName, Client: c.Cluster.GetClient()}
 }
 
+// GetEventRecorderFor returns a new EventRecorder for the provided name.
 func (c *NamespacedCluster) GetEventRecorderFor(name string) record.EventRecorder {
 	panic("implement me")
 }
 
+// GetAPIReader returns a reader against the cluster.
 func (c *NamespacedCluster) GetAPIReader() client.Reader {
 	return c.GetClient()
 }
 
+// Start starts the cluster.
 func (c *NamespacedCluster) Start(ctx context.Context) error {
 	return nil // no-op as this is shared
 }

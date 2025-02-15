@@ -29,7 +29,10 @@ type WithCluster[request comparable] struct {
 
 // String returns the string representation.
 func (r WithCluster[request]) String() string {
-	return "cluster://" + r.ClusterName + "/" + fmt.Sprintf("%s", r.Request)
+	if r.ClusterName == "" {
+		return fmt.Sprint(r.Request)
+	}
+	return "cluster://" + r.ClusterName + "/" + fmt.Sprint(r.Request)
 }
 
 // Cluster returns the name of the cluster that the request belongs to.

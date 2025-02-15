@@ -25,7 +25,6 @@ import (
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -35,6 +34,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/utils/ptr"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -219,7 +219,7 @@ var _ = Describe("application", func() {
 
 			instance, err := TypedControllerManagedBy[mcreconcile.WithCluster[empty]](m).
 				Named("my_controller-1").
-				WatchesRawSource(must(
+				WatchesRawSource(must[source.TypedSource[mcreconcile.WithCluster[empty]]](
 					mcsource.TypedKind(
 						&appsv1.ReplicaSet{},
 						mchandler.TypedEnqueueRequestsFromMapFunc(func(ctx context.Context, rs *appsv1.ReplicaSet) []mcreconcile.WithCluster[empty] {

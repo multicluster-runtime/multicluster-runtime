@@ -16,6 +16,8 @@ limitations under the License.
 
 package builder
 
+// EngageOptions configures how the controller should engage with clusters
+// when a provider is configured.
 type EngageOptions struct {
 	engageWithLocalCluster     *bool
 	engageWithProviderClusters *bool
