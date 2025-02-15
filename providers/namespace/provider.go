@@ -22,6 +22,8 @@ import (
 	"sync"
 
 	"github.com/go-logr/logr"
+	"github.com/multicluster-runtime/multicluster-runtime/pkg/multicluster"
+
 	mcmanager "github.com/multicluster-runtime/multicluster-runtime/pkg/manager"
 	corev1 "k8s.io/api/core/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -31,11 +33,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 )
 
-// NamespacedClusterProvider is a cluster provider that represents each namespace
+var _ multicluster.Provider = &Provider{}
+
+// Provider is a cluster provider that represents each namespace
 // as a dedicated cluster with only a "default" namespace. It maps each namespace
 // to "default" and vice versa, simulating a multi-cluster setup. It uses one
 // informer to watch objects for all namespaces.
-type NamespacedClusterProvider struct {
+type Provider struct {
 	cluster cluster.Cluster
 
 	mgr manager.Manager
@@ -46,8 +50,8 @@ type NamespacedClusterProvider struct {
 	cancelFns map[string]context.CancelFunc
 }
 
-func NewNamespacedClusterProvider(cl cluster.Cluster) *NamespacedClusterProvider {
-	return &NamespacedClusterProvider{
+func New(cl cluster.Cluster) *Provider {
+	return &Provider{
 		cluster:   cl,
 		log:       log.Log.WithName("namespaced-cluster-provider"),
 		clusters:  map[string]cluster.Cluster{},
@@ -55,7 +59,8 @@ func NewNamespacedClusterProvider(cl cluster.Cluster) *NamespacedClusterProvider
 	}
 }
 
-func (p *NamespacedClusterProvider) Start(ctx context.Context, mgr mcmanager.Manager) error {
+// Run starts the provider and blocks.
+func (p *Provider) Run(ctx context.Context, mgr mcmanager.Manager) error {
 	nsInf, err := p.cluster.GetCache().GetInformer(ctx, &corev1.Namespace{})
 	if err != nil {
 		return err
@@ -116,10 +121,12 @@ func (p *NamespacedClusterProvider) Start(ctx context.Context, mgr mcmanager.Man
 		return err
 	}
 
+	<-ctx.Done()
+
 	return nil
 }
 
-func (p *NamespacedClusterProvider) Get(ctx context.Context, clusterName string) (cluster.Cluster, error) {
+func (p *Provider) Get(ctx context.Context, clusterName string) (cluster.Cluster, error) {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 	if cl, ok := p.clusters[clusterName]; ok {

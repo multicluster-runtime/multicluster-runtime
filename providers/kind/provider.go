@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+
 	mcmanager "github.com/multicluster-runtime/multicluster-runtime/pkg/manager"
 	"github.com/multicluster-runtime/multicluster-runtime/pkg/multicluster"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -33,6 +34,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	kind "sigs.k8s.io/kind/pkg/cluster"
 )
+
+var _ multicluster.Provider = &Provider{}
 
 // New creates a new kind cluster Provider.
 func New() *Provider {
@@ -52,8 +55,7 @@ type Provider struct {
 	cancelFns map[string]context.CancelFunc
 }
 
-var _ multicluster.Provider = &Provider{}
-
+// Get returns the cluster with the given name, if it is known.
 func (k *Provider) Get(ctx context.Context, clusterName string) (cluster.Cluster, error) {
 	k.lock.RLock()
 	defer k.lock.RUnlock()
@@ -64,6 +66,7 @@ func (k *Provider) Get(ctx context.Context, clusterName string) (cluster.Cluster
 	return nil, fmt.Errorf("cluster %s not found", clusterName)
 }
 
+// Run starts the provider and blocks.
 func (k *Provider) Run(ctx context.Context, mgr mcmanager.Manager) error {
 	k.log.Info("Starting kind cluster Provider")
 
