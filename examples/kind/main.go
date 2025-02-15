@@ -84,7 +84,7 @@ func main() {
 
 				// Retrieve the pod from the cluster.
 				pod := &corev1.Pod{}
-				if err := client.Get(ctx, req.NamespacedName, pod); err != nil {
+				if err := client.Get(ctx, req.Request.NamespacedName, pod); err != nil {
 					if !apierrors.IsNotFound(err) {
 						return reconcile.Result{}, err
 					}

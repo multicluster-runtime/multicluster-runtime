@@ -139,10 +139,10 @@ func main() {
 
 				// Retrieve the service account from the namespace.
 				cm := &corev1.ConfigMap{}
-				if err := client.Get(ctx, req.NamespacedName, cm); err != nil {
+				if err := client.Get(ctx, req.Request.NamespacedName, cm); err != nil {
 					return reconcile.Result{}, err
 				}
-				log.Info("Reconciling configmap", "cluster", req.ClusterName, "ns", req.Namespace, "name", cm.Name, "uuid", cm.UID)
+				log.Info("Reconciling configmap", "cluster", req.ClusterName, "ns", req.Request.Namespace, "name", cm.Name, "uuid", cm.UID)
 
 				return ctrl.Result{}, nil
 			},
