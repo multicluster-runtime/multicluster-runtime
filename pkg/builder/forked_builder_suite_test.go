@@ -21,18 +21,20 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/rest"
-	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
-	"sigs.k8s.io/controller-runtime/pkg/internal/testing/addr"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+
+	"github.com/multicluster-runtime/multicluster-runtime/internal/forked/testing/addr"
 )
 
 func TestBuilder(t *testing.T) {
@@ -47,10 +49,7 @@ var _ = BeforeSuite(func() {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
 	testenv = &envtest.Environment{}
-	addCRDToEnvironment(testenv,
-		testDefaulterGVK,
-		testValidatorGVK,
-		testDefaultValidatorGVK)
+	addCRDToEnvironment(testenv)
 
 	var err error
 	cfg, err = testenv.Start()
