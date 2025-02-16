@@ -40,7 +40,7 @@ var _ multicluster.Provider = &Provider{}
 // New creates a new kind cluster Provider.
 func New() *Provider {
 	return &Provider{
-		log:       log.Log.WithName("kind-cluster-Provider"),
+		log:       log.Log.WithName("kind-cluster-provider"),
 		clusters:  map[string]cluster.Cluster{},
 		cancelFns: map[string]context.CancelFunc{},
 	}
@@ -68,7 +68,7 @@ func (k *Provider) Get(ctx context.Context, clusterName string) (cluster.Cluster
 
 // Run starts the provider and blocks.
 func (k *Provider) Run(ctx context.Context, mgr mcmanager.Manager) error {
-	k.log.Info("Starting kind cluster Provider")
+	k.log.Info("Starting kind cluster provider")
 
 	provider := kind.NewProvider()
 

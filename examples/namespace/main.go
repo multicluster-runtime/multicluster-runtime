@@ -24,6 +24,7 @@ import (
 
 	flag "github.com/spf13/pflag"
 	"golang.org/x/sync/errgroup"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -125,24 +126,27 @@ func main() {
 	}
 
 	if err := mcbuilder.ControllerManagedBy(mgr).
-		Named("fleet-ns-configmap-controller").
+		Named("multicluster-configmaps").
 		For(&corev1.ConfigMap{}).
 		Complete(mcreconcile.Func(
 			func(ctx context.Context, req mcreconcile.Request) (ctrl.Result, error) {
 				log := log.FromContext(ctx).WithValues("cluster", req.ClusterName)
+				log.Info("Reconciling ConfigMap")
 
 				cl, err := mgr.GetCluster(ctx, req.ClusterName)
 				if err != nil {
 					return reconcile.Result{}, err
 				}
-				client := cl.GetClient()
 
-				// Retrieve the service account from the namespace.
 				cm := &corev1.ConfigMap{}
-				if err := client.Get(ctx, req.NamespacedName, cm); err != nil {
+				if err := cl.GetClient().Get(ctx, req.Request.NamespacedName, cm); err != nil {
+					if apierrors.IsNotFound(err) {
+						return reconcile.Result{}, nil
+					}
 					return reconcile.Result{}, err
 				}
-				log.Info("Reconciling configmap", "cluster", req.ClusterName, "ns", req.Request.Namespace, "name", cm.Name, "uuid", cm.UID)
+
+				log.Info("Found ConfigMap", "uid", cm.UID)
 
 				return ctrl.Result{}, nil
 			},
