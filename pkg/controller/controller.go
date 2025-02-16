@@ -117,11 +117,12 @@ func (c *mcController[request]) Engage(ctx context.Context, name string, cl clus
 		return nil
 	}
 
-	ctx, cancel := context.WithCancel(ctx)
+	ctx, cancel := context.WithCancel(ctx) //nolint:govet // cancel is called in the error case only.
 
 	// pass through in case the controller itself is cluster aware
 	if ctrl, ok := c.TypedController.(multicluster.Aware); ok {
 		if err := ctrl.Engage(ctx, name, cl); err != nil {
+			cancel()
 			return err
 		}
 	}
@@ -152,14 +153,14 @@ func (c *mcController[request]) Engage(ctx context.Context, name string, cl clus
 		}
 	}()
 
-	return nil
+	return nil //nolint:govet // cancel is called in the error case only.
 }
 
 func (c *mcController[request]) MultiClusterWatch(src mcsource.TypedSource[client.Object, request]) error {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.Background()) //nolint:govet // cancel is called in the error case only.
 
 	for name, eng := range c.clusters {
 		src, err := src.ForCluster(name, eng.cluster)
@@ -175,7 +176,7 @@ func (c *mcController[request]) MultiClusterWatch(src mcsource.TypedSource[clien
 
 	c.sources = append(c.sources, src)
 
-	return nil
+	return nil //nolint:govet // cancel is called in the error case only.
 }
 
 func startWithinContext[request mcreconcile.ClusterAware[request]](ctx context.Context, src source.TypedSource[request]) source.TypedSource[request] {

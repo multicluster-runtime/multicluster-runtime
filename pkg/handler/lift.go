@@ -35,7 +35,7 @@ import (
 type EventHandlerFunc = func(string, cluster.Cluster) EventHandler
 
 // TypedEventHandlerFunc produces a handler.TypedEventHandler for a cluster.
-type TypedEventHandlerFunc[object client.Object, request mcreconcile.ClusterAware[request]] = func(string, cluster.Cluster) handler.TypedEventHandler[object, request]
+type TypedEventHandlerFunc[object client.Object, request mcreconcile.ClusterAware[request]] func(string, cluster.Cluster) handler.TypedEventHandler[object, request]
 
 // ForCluster wraps a handler.EventHandler without multi-cluster support for one
 // concrete cluster.

@@ -1,3 +1,6 @@
+[![Go Report Card](https://goreportcard.com/badge/github.com/multicluster-runtime/multicluster-runtime)](https://goreportcard.com/report/github.com/multicluster-runtime/multicluster-runtime)
+[![godoc](https://pkg.go.dev/badge/github.com/multicluster-runtime/multicluster-runtime)](https://pkg.go.dev/github.com/multicluster-runtime/multicluster-runtime)
+
 # multicluster-runtime
 
 <img src="./contrib/logo/logo.png" width="300"/>

@@ -66,7 +66,7 @@ func main() {
 	mgr, err := mcmanager.New(cfg, provider, manager.Options{})
 	if err != nil {
 		entryLog.Error(err, "unable to set up overall controller manager")
-		os.Exit(1)
+		os.Exit(1) //nolint:gocritic // We want to return an error RC.
 	}
 
 	if err := mcbuilder.ControllerManagedBy(mgr).

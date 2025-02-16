@@ -30,7 +30,6 @@ import (
 	toolscache "k8s.io/client-go/tools/cache"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/manager"
 )
 
 var _ multicluster.Provider = &Provider{}
@@ -42,14 +41,13 @@ var _ multicluster.Provider = &Provider{}
 type Provider struct {
 	cluster cluster.Cluster
 
-	mgr manager.Manager
-
 	log       logr.Logger
 	lock      sync.RWMutex
 	clusters  map[string]cluster.Cluster
 	cancelFns map[string]context.CancelFunc
 }
 
+// New creates a new namespace provider.
 func New(cl cluster.Cluster) *Provider {
 	return &Provider{
 		cluster:   cl,
@@ -126,6 +124,7 @@ func (p *Provider) Run(ctx context.Context, mgr mcmanager.Manager) error {
 	return nil
 }
 
+// Get returns a cluster by name.
 func (p *Provider) Get(ctx context.Context, clusterName string) (cluster.Cluster, error) {
 	p.lock.RLock()
 	defer p.lock.RUnlock()

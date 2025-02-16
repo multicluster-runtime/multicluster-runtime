@@ -44,9 +44,9 @@ type Request struct {
 // String returns the general purpose string representation.
 func (r Request) String() string {
 	if r.ClusterName == "" {
-		return fmt.Sprintf("%s", r.Request)
+		return r.Request.String()
 	}
-	return "cluster://" + r.ClusterName + string(types.Separator) + fmt.Sprintf("%s", r.Request)
+	return "cluster://" + r.ClusterName + string(types.Separator) + r.Request.String()
 }
 
 // Cluster returns the name of the cluster that the request belongs to.
