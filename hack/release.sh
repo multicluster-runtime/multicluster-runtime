@@ -61,7 +61,7 @@ for DIR in providers examples; do
     pushd ${B}
     stepi go mod tidy
     popd
-    stepi git add "${B}/go.mod"
+    stepi git add "${B}/go.mod" "${B}/go.sum"
     stepi git commit --allow-empty -m "Update ${B}/go.mod to depend on ${VERSION}"
     stepi git tag -s -m "$V" "${B}/${VERSION}"
     stepi git push origin "${B}/${VERSION}"
