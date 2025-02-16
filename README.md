@@ -3,6 +3,8 @@
 
 > [!WARNING]
 > multicluster-runtime is currently an experiment to add multi-cluster support on-top of controller-runtime. It is not generally consumable yet. Use at your own risk. Contributions though are highly welcome.
+>
+> Related controller-runtime design: https://github.com/kubernetes-sigs/controller-runtime/pull/2746
 
 # multicluster-runtime
 
