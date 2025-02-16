@@ -1,6 +1,9 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/multicluster-runtime/multicluster-runtime)](https://goreportcard.com/report/github.com/multicluster-runtime/multicluster-runtime)
 [![godoc](https://pkg.go.dev/badge/github.com/multicluster-runtime/multicluster-runtime)](https://pkg.go.dev/github.com/multicluster-runtime/multicluster-runtime)
 
+> [!WARNING]
+> multicluster-runtime is currently an experiment to add multi-cluster support on-top of controller-runtime. It is not generally consumable yet. Use at your own risk. Contributions though are highly welcome.
+
 # multicluster-runtime
 
 <img src="./contrib/logo/logo.png" width="300"/>
@@ -10,9 +13,6 @@
 - **no fork, no go mod replace**: clean extension to [upstream controller-runtime](https://github.com/kubernetes-sigs/controller-runtime).
 - **universal**: kind, [cluster-api](https://github.com/kubernetes-sigs/cluster-api), [Gardener](https://gardener.cloud/) (tbd), kcp (WIP), BYO. Cluster providers make the controller-runtime multi-cluster aware.
 - **seamless**: add multi-cluster support without compromising on single-cluster. Run in either mode without code changes to the reconcilers. 
-
-> [!WARNING]  
-> multicluster-runtime is currently alpha quality before its first stable and generally consumable release. Use at your own risk.
 
 ## Uniform Reconcilers
 
@@ -32,7 +32,7 @@ Run reconcilers that listen to some cluster(s) and operate other clusters.
 
 ## Principles
 
-1. multicluster-runtime is a friendly ❤️ extension of controller-runtime.
+1. multicluster-runtime is a friendly extension of controller-runtime.
 2. multicluster-runtime loves ❤️ contributions.
 3. multicluster-runtime is following controller-runtime releases.
 4. multicluster-runtime is developed as if it was part of controller-runtime (quality standards, naming, style).
