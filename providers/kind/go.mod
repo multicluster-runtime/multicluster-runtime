@@ -6,7 +6,7 @@ replace github.com/multicluster-runtime/multicluster-runtime => ../..
 
 require (
 	github.com/go-logr/logr v1.4.2
-	github.com/multicluster-runtime/multicluster-runtime v0.20.0-alpha.2
+	github.com/multicluster-runtime/multicluster-runtime v0.20.0-alpha.3
 	k8s.io/apimachinery v0.32.1
 	k8s.io/client-go v0.32.1
 	sigs.k8s.io/controller-runtime v0.20.1
