@@ -54,6 +54,8 @@ GO_APIDIFF := $(TOOLS_BIN_DIR)/go-apidiff
 CONTROLLER_GEN := $(TOOLS_BIN_DIR)/controller-gen
 EXAMPLES_KIND_DIR := $(abspath examples/kind)
 PROVIDERS_KIND_DIR := $(abspath providers/kind)
+EXAMPLES_CLUSTER_API_DIR := $(abspath examples/cluster-api)
+PROVIDERS_CLUSTER_API_DIR := $(abspath providers/cluster-api)
 GO_INSTALL := ./hack/go-install.sh
 
 # The help will print out all targets with their descriptions organized bellow their categories. The categories are represented by `##@` and the target descriptions by `##`.
@@ -119,6 +121,8 @@ lint: $(GOLANGCI_LINT) ## Lint codebase
 	$(GOLANGCI_LINT) run -v $(GOLANGCI_LINT_EXTRA_ARGS)
 	cd examples/kind; $(GOLANGCI_LINT) run -v $(GOLANGCI_LINT_EXTRA_ARGS)
 	cd proviers/kind; $(GOLANGCI_LINT) run -v $(GOLANGCI_LINT_EXTRA_ARGS)
+	cd examples/cluster-api; $(GOLANGCI_LINT) run -v $(GOLANGCI_LINT_EXTRA_ARGS)
+	cd proviers/cluster-api; $(GOLANGCI_LINT) run -v $(GOLANGCI_LINT_EXTRA_ARGS)
 
 .PHONY: lint-fix
 lint-fix: $(GOLANGCI_LINT) ## Lint the codebase and run auto-fixers if supported by the linter.
@@ -154,7 +158,12 @@ clean-release: ## Remove the release folder
 
 .PHONY: verify-modules
 verify-modules: modules $(GO_MOD_CHECK) ## Verify go modules are up to date
-	@if !(git diff --quiet HEAD -- go.sum go.mod $(TOOLS_DIR)/go.mod $(TOOLS_DIR)/go.sum $(EXAMPLES_KIND_DIR)/go.mod $(EXAMPLES_KIND_DIR)/go.sum  $(PROVIDERS_KIND_DIR)/go.mod $(PROVIDERS_KIND_DIR)/go.sum); then \
+	@if !(git diff --quiet HEAD -- go.sum go.mod $(TOOLS_DIR)/go.mod $(TOOLS_DIR)/go.sum \
+		$(EXAMPLES_KIND_DIR)/go.mod $(EXAMPLES_KIND_DIR)/go.sum \
+		$(PROVIDERS_KIND_DIR)/go.mod $(PROVIDERS_KIND_DIR)/go.sum \
+		$(EXAMPLES_CLUSTER_API_DIR)/go.mod $(EXAMPLES_CLUSTER_API_DIR)/go.sum \
+		$(PROVIDERS_CLUSTER_API_DIR)/go.mod $(PROVIDERS_CLUSTER_API_DIR)/go.sum \
+	); then \
 		git diff; \
 		echo "go module files are out of date, please run 'make modules'"; exit 1; \
 	fi

@@ -1,5 +1,5 @@
 /*
-Copyright 2024 The Kubernetes Authors.
+Copyright 2025 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -18,23 +18,33 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 
+	"golang.org/x/sync/errgroup"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/client-go/kubernetes/scheme"
+	capiv1beta1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/envtest"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/manager/signals"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	mcbuilder "github.com/multicluster-runtime/multicluster-runtime/pkg/builder"
 	mcmanager "github.com/multicluster-runtime/multicluster-runtime/pkg/manager"
 	mcreconcile "github.com/multicluster-runtime/multicluster-runtime/pkg/reconcile"
-	"github.com/multicluster-runtime/multicluster-runtime/providers/kind"
+	capi "github.com/multicluster-runtime/multicluster-runtime/providers/cluster-api"
 )
+
+func init() {
+	runtime.Must(capiv1beta1.AddToScheme(scheme.Scheme))
+}
 
 func main() {
 	log.SetLogger(zap.New(zap.UseDevMode(true)))
@@ -42,32 +52,47 @@ func main() {
 	ctx := signals.SetupSignalHandler()
 	entryLog := log.Log.WithName("entrypoint")
 
-	testEnv := &envtest.Environment{}
-	cfg, err := testEnv.Start()
+	// Start local manager to read the Cluster-API objects.
+	cfg, err := ctrl.GetConfig()
 	if err != nil {
-		entryLog.Error(err, "failed to start local environment")
+		entryLog.Error(err, "unable to get kubeconfig")
 		os.Exit(1)
 	}
-	defer func() {
-		if testEnv == nil {
-			return
-		}
-		if err := testEnv.Stop(); err != nil {
-			entryLog.Error(err, "failed to stop local environment")
-			os.Exit(1)
-		}
-	}()
-
-	// Setup a Manager, note that this not yet engages clusters, only makes them available.
-	entryLog.Info("Setting up manager")
-	provider := kind.New()
-	mgr, err := mcmanager.New(cfg, provider, manager.Options{})
+	localMgr, err := manager.New(cfg, manager.Options{
+		Client: client.Options{
+			Cache: &client.CacheOptions{
+				Unstructured: true,
+				DisableFor:   []client.Object{&corev1.Secret{}},
+			},
+		},
+	})
 	if err != nil {
 		entryLog.Error(err, "unable to set up overall controller manager")
-		os.Exit(1) //nolint:gocritic // We want to return an error RC.
+		os.Exit(1)
 	}
 
-	if err := mcbuilder.ControllerManagedBy(mgr).
+	// Create the provider against the local manager.
+	provider, err := capi.New(localMgr, capi.Options{})
+	if err != nil {
+		entryLog.Error(err, "unable to create provider")
+		os.Exit(1)
+	}
+
+	// Create a multi-cluster manager attached to the provider.
+	entryLog.Info("Setting up local manager")
+	mcMgr, err := mcmanager.New(cfg, provider, manager.Options{
+		LeaderElection: false, // TODO(sttts): how to sync that with the upper manager?
+		Metrics: metricsserver.Options{
+			BindAddress: "0", // only one can listen
+		},
+	})
+	if err != nil {
+		entryLog.Error(err, "unable to set up overall controller manager")
+		os.Exit(1)
+	}
+
+	// Create a configmap controller in the multi-cluster manager.
+	if err := mcbuilder.ControllerManagedBy(mcMgr).
 		Named("multicluster-configmaps").
 		For(&corev1.ConfigMap{}).
 		Complete(mcreconcile.Func(
@@ -75,7 +100,7 @@ func main() {
 				log := log.FromContext(ctx).WithValues("cluster", req.ClusterName)
 				log.Info("Reconciling ConfigMap")
 
-				cl, err := mgr.GetCluster(ctx, req.ClusterName)
+				cl, err := mcMgr.GetCluster(ctx, req.ClusterName)
 				if err != nil {
 					return reconcile.Result{}, err
 				}
@@ -97,17 +122,26 @@ func main() {
 		os.Exit(1)
 	}
 
-	entryLog.Info("Starting provider")
-	go func() {
-		if err := provider.Run(ctx, mgr); err != nil {
-			entryLog.Error(err, "unable to run provider")
-			os.Exit(1)
-		}
-	}()
-
-	entryLog.Info("Starting manager")
-	if err := mgr.Start(ctx); err != nil {
+	// Starting everything.
+	g, ctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		return ignoreCanceled(localMgr.Start(ctx))
+	})
+	g.Go(func() error {
+		return ignoreCanceled(provider.Run(ctx, mcMgr))
+	})
+	g.Go(func() error {
+		return ignoreCanceled(mcMgr.Start(ctx))
+	})
+	if err := g.Wait(); err != nil {
 		entryLog.Error(err, "unable to run manager")
 		os.Exit(1)
 	}
+}
+
+func ignoreCanceled(err error) error {
+	if errors.Is(err, context.Canceled) {
+		return nil
+	}
+	return err
 }
