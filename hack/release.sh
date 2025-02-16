@@ -68,6 +68,8 @@ for DIR in providers examples; do
   done
 done
 
+stepi git push
+
 echo "Congratulations! You have released ${VERSION}! 🎉"
 echo
 echo "Now don't forget to:"
