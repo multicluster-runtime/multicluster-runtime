@@ -31,5 +31,8 @@ if [[ -n ${CI} ]]; then
     make verify-modules
 fi
 
-header_text "running golangci-lint"
-make lint
+# Only run locally because CI has it run in dedicated jobs
+if [[ -z ${CI} ]]; then
+    header_text "running golangci-lint"
+    make lint
+fi
