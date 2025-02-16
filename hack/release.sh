@@ -52,9 +52,9 @@ for DIR in providers examples; do
   for GOMOD in $(find "${DIR}" -name go.mod); do
     B=$(dirname ${GOMOD})
     if [ "$(uname)" = "Darwin" ]; then
-      stepi sed -i '' -E '/github\.com\/multicluster-runtime\/multicluster-runtime/ s/([[:space:]]+)v[[:alnum:].-_+]+$/\1'"${VERSION}"'/' "${B}/go.mod"
+      stepi sed -i '' -E '/github\.com\/multicluster-runtime\/multicluster-runtime/ s/([[:space:]]+)v[[:alnum:]._+\-]+$/\1'"${VERSION}"'/' "${B}/go.mod"
     else
-      stepi sed -i -E '/github\.com\/multicluster-runtime\/multicluster-runtime/ s/([[:space:]]+)v[[:alnum:].-_+]+$/\1'"${VERSION}"'/' "${B}/go.mod"
+      stepi sed -i -E '/github\.com\/multicluster-runtime\/multicluster-runtime/ s/([[:space:]]+)v[[:alnum:]._+\-]+$/\1'"${VERSION}"'/' "${B}/go.mod"
     fi
     step git diff "${B}/go.mod"
     echo
@@ -62,7 +62,7 @@ for DIR in providers examples; do
     stepi go mod tidy
     popd
     stepi git add "${B}/go.mod"
-    stepi git commit -m "Update ${B}/go.mod to depend on ${VERSION}"
+    stepi git commit --allow-empty -m "Update ${B}/go.mod to depend on ${VERSION}"
     stepi git tag -s -m "$V" "${B}/${VERSION}"
     stepi git push origin "${B}/${VERSION}"
   done
