@@ -40,3 +40,16 @@ Run reconcilers that listen to some cluster(s) and operate other clusters.
 4. multicluster-runtime is developed as if it was part of controller-runtime (quality standards, naming, style).
 5. multicluster-runtime could be a testbed for native controller-runtime functionality, eventually becoming superfluous.
 6. multicluster-runtime is provider agnostic, but may contain providers with its own go.mod files and dedicated OWNERS files.
+
+## FAQ
+
+### How is it different from https://github.com/admiraltyio/multicluster-controller ?
+
+In contrast to https://github.com/admiraltyio/multicluster-controller, multicluster-runtime keeps building on controller-runtime for most of its constructs. It is not replacing the manager, the controller or the cluster. To a large degree, this became possible through the extensive use of generics in controller-runtime. Most multicluster-runtime constructs are just type instantiations with a little glue.
+
+### Can I dynamically load provider plugins?
+
+No, plugins are out of scope for now. Multicluster-runtime needs source code changes to 
+1. enable multi-cluster support by replacing some controller-runtime imports with the multicluster-runtime equivalents and
+2. wire supported providers.
+The provider interface is simple. So it is not ruled out to have some plugin mechanism in the future.
