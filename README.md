@@ -41,6 +41,72 @@ Run reconcilers that listen to some cluster(s) and operate other clusters.
 5. multicluster-runtime could be a testbed for native controller-runtime functionality, eventually becoming superfluous.
 6. multicluster-runtime is provider agnostic, but may contain providers with its own go.mod files and dedicated OWNERS files.
 
+## How it looks?
+
+```golang
+package main
+
+import (
+	"context"
+	"log"
+
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/manager/signals"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	mcbuilder "github.com/multicluster-runtime/multicluster-runtime/pkg/builder"
+	mcmanager "github.com/multicluster-runtime/multicluster-runtime/pkg/manager"
+	mcreconcile "github.com/multicluster-runtime/multicluster-runtime/pkg/reconcile"
+	"github.com/multicluster-runtime/multicluster-runtime/providers/kind"
+)
+
+func main() {
+	ctx := signals.SetupSignalHandler()
+
+	provider := kind.New()
+	mgr, err := mcmanager.New(ctrl.GetConfigOrDie(), provider, manager.Options{})
+	if err != nil {
+		log.Fatal(err, "unable to create manager")
+	}
+
+	err = mcbuilder.ControllerManagedBy(mgr).
+		Named("multicluster-configmaps").
+		For(&corev1.ConfigMap{}).
+		Complete(mcreconcile.Func(
+			func(ctx context.Context, req mcreconcile.Request) (ctrl.Result, error) {
+				cl, err := mgr.GetCluster(ctx, req.ClusterName)
+				if err != nil {
+					return reconcile.Result{}, err
+				}
+
+				cm := &corev1.ConfigMap{}
+				if err := cl.GetClient().Get(ctx, req.Request.NamespacedName, cm); err != nil {
+					if apierrors.IsNotFound(err) {
+						return reconcile.Result{}, nil
+					}
+					return reconcile.Result{}, err
+				}
+
+				log.Printf("ConfigMap %s/%s in cluster %q", cm.Namespace, cm.Name, req.ClusterName)
+
+				return ctrl.Result{}, nil
+			},
+		))
+	if err != nil {
+		log.Fatal(err, "unable to create controller")
+	}
+
+	go provider.Run(ctx, mgr)
+	if err := mgr.Start(ctx); err != nil {
+		log.Fatal(err, "unable to run manager")
+	}
+}
+```
+
 ## FAQ
 
 ### How is it different from https://github.com/admiraltyio/multicluster-controller ?
