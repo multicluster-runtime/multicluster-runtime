@@ -54,5 +54,5 @@ type Provider interface {
 	// returns an existing cluster if it has been created before.
 	// If no cluster is known to the provider under the given cluster name,
 	// an error should be returned.
-	Get(ctx context.Context, clusterName string) (cluster.Cluster, error)
+	Get(clusterName string) (cluster.Cluster, error)
 }

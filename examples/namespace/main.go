@@ -133,7 +133,7 @@ func main() {
 				log := log.FromContext(ctx).WithValues("cluster", req.ClusterName)
 				log.Info("Reconciling ConfigMap")
 
-				cl, err := mgr.GetCluster(ctx, req.ClusterName)
+				cl, err := mgr.GetCluster(req.ClusterName)
 				if err != nil {
 					return reconcile.Result{}, err
 				}

@@ -107,7 +107,7 @@ type Provider struct {
 }
 
 // Get returns the cluster with the given name, if it is known.
-func (p *Provider) Get(_ context.Context, clusterName string) (cluster.Cluster, error) {
+func (p *Provider) Get(clusterName string) (cluster.Cluster, error) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	if cl, ok := p.clusters[clusterName]; ok {

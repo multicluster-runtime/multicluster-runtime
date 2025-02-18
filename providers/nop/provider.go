@@ -42,6 +42,6 @@ func (p *Provider) Run(ctx context.Context, _ mcmanager.Manager) error {
 }
 
 // Get returns an error for any cluster name.
-func (p *Provider) Get(_ context.Context, clusterName string) (cluster.Cluster, error) {
+func (p *Provider) Get(clusterName string) (cluster.Cluster, error) {
 	return nil, fmt.Errorf("cluster %s not found", clusterName)
 }

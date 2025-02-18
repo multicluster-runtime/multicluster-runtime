@@ -106,7 +106,7 @@ type Manager interface {
 	// returns an existing cluster if it has been created before.
 	// If no cluster is known to the provider under the given cluster name,
 	// an error should be returned.
-	GetCluster(ctx context.Context, clusterName string) (cluster.Cluster, error)
+	GetCluster(clusterName string) (cluster.Cluster, error)
 
 	// ClusterFromContext returns the default cluster set in the context.
 	ClusterFromContext(ctx context.Context) (cluster.Cluster, error)
@@ -163,14 +163,14 @@ func WithMultiCluster(mgr manager.Manager, provider multicluster.Provider) (Mana
 // returns an existing cluster if it has been created before.
 // If no cluster is known to the provider under the given cluster name,
 // an error should be returned.
-func (m *mcManager) GetCluster(ctx context.Context, clusterName string) (cluster.Cluster, error) {
+func (m *mcManager) GetCluster(clusterName string) (cluster.Cluster, error) {
 	if clusterName == LocalCluster {
 		return m.Manager, nil
 	}
 	if m.provider == nil {
 		return nil, fmt.Errorf("no multicluster provider set, but cluster %q passed", clusterName)
 	}
-	return m.provider.Get(ctx, clusterName)
+	return m.provider.Get(clusterName)
 }
 
 // ClusterFromContext returns the default cluster set in the context.
@@ -179,7 +179,7 @@ func (m *mcManager) ClusterFromContext(ctx context.Context) (cluster.Cluster, er
 	if !ok {
 		return nil, fmt.Errorf("no cluster set in context, use ReconcilerWithCluster helper when building the controller")
 	}
-	return m.GetCluster(ctx, clusterName)
+	return m.GetCluster(clusterName)
 }
 
 // GetLocalManager returns the underlying controller-runtime manager of the host.

@@ -88,7 +88,7 @@ var _ = Describe("Provider Namespace", func() {
 						log := log.FromContext(ctx).WithValues("request", req.String())
 						log.Info("Reconciling ConfigMap")
 
-						cl, err := mgr.GetCluster(ctx, req.ClusterName)
+						cl, err := mgr.GetCluster(req.ClusterName)
 						if err != nil {
 							return reconcile.Result{}, err
 						}

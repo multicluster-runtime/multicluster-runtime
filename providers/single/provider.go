@@ -49,7 +49,7 @@ func (p *Provider) Run(ctx context.Context, _ mcmanager.Manager) error {
 }
 
 // Get returns the cluster with the given name.
-func (p *Provider) Get(_ context.Context, clusterName string) (cluster.Cluster, error) {
+func (p *Provider) Get(clusterName string) (cluster.Cluster, error) {
 	if clusterName == p.name {
 		return p.cl, nil
 	}

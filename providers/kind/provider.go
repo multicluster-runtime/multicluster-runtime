@@ -56,7 +56,7 @@ type Provider struct {
 }
 
 // Get returns the cluster with the given name, if it is known.
-func (k *Provider) Get(ctx context.Context, clusterName string) (cluster.Cluster, error) {
+func (k *Provider) Get(clusterName string) (cluster.Cluster, error) {
 	k.lock.RLock()
 	defer k.lock.RUnlock()
 	if cl, ok := k.clusters[clusterName]; ok {
