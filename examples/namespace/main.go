@@ -19,7 +19,6 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 
 	flag "github.com/spf13/pflag"
@@ -37,7 +36,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
-	"sigs.k8s.io/controller-runtime/pkg/log"
+	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/manager/signals"
@@ -54,8 +53,8 @@ func init() {
 }
 
 func main() {
-	log.SetLogger(zap.New(zap.UseDevMode(true)))
-	entryLog := log.Log.WithName("entrypoint")
+	ctrllog.SetLogger(zap.New(zap.UseDevMode(true)))
+	entryLog := ctrllog.Log.WithName("entrypoint")
 	ctx := signals.SetupSignalHandler()
 
 	kubeconfig := flag.String("kubeconfig", "", "path to the kubeconfig file. If not given a test env is started.")
@@ -104,12 +103,7 @@ func main() {
 	runtime.Must(client.IgnoreAlreadyExists(cli.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "island"}})))
 	runtime.Must(client.IgnoreAlreadyExists(cli.Create(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "island", Name: "bird"}})))
 
-	entryLog.Info("Setting up provider")
 	cl, err := cluster.New(cfg, namespace.WithClusterNameIndex())
-	if err != nil {
-		entryLog.Error(err, "unable to set up provider")
-		os.Exit(1)
-	}
 	provider := namespace.New(cl)
 
 	// Setup a cluster-aware Manager, with the provider to lookup clusters.
@@ -125,12 +119,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := mcbuilder.ControllerManagedBy(mgr).
+	mcbuilder.ControllerManagedBy(mgr).
 		Named("multicluster-configmaps").
 		For(&corev1.ConfigMap{}).
 		Complete(mcreconcile.Func(
 			func(ctx context.Context, req mcreconcile.Request) (ctrl.Result, error) {
-				log := log.FromContext(ctx).WithValues("cluster", req.ClusterName)
+				log := ctrllog.FromContext(ctx).WithValues("cluster", req.ClusterName)
 				log.Info("Reconciling ConfigMap")
 
 				cl, err := mgr.GetCluster(ctx, req.ClusterName)
@@ -146,35 +140,25 @@ func main() {
 					return reconcile.Result{}, err
 				}
 
-				log.Info("Found ConfigMap", "uid", cm.UID)
+				log.Info("ConfigMap %s/%s in cluster %q", cm.Namespace, cm.Name, req.ClusterName)
 
 				return ctrl.Result{}, nil
 			},
-		)); err != nil {
-		entryLog.Error(err, "unable to set up controller")
-		os.Exit(1)
-	}
+		))
 
-	entryLog.Info("Starting provider")
-	go func() {
-		if err := ignoreCanceled(provider.Run(ctx, mgr)); err != nil {
-			entryLog.Error(err, "failed to start provider")
-			os.Exit(1)
-		}
-	}()
-
-	entryLog.Info("Starting cluster")
+	// Starting everything.
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error {
-		if err := ignoreCanceled(cl.Start(ctx)); err != nil {
-			return fmt.Errorf("failed to start cluster backing provider: %w", err)
-		}
-		return nil
+		return ignoreCanceled(provider.Run(ctx, mgr))
 	})
-
-	entryLog.Info("Starting cluster-aware manager")
-	if err := ignoreCanceled(mgr.Start(ctx)); err != nil {
-		entryLog.Error(err, "unable to run manager")
+	g.Go(func() error {
+		return ignoreCanceled(cl.Start(ctx))
+	})
+	g.Go(func() error {
+		return ignoreCanceled(mgr.Start(ctx))
+	})
+	if err := g.Wait(); err != nil {
+		entryLog.Error(err, "unable to start")
 		os.Exit(1)
 	}
 }
