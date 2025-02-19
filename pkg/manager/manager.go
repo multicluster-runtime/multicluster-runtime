@@ -35,29 +35,11 @@ import (
 	"github.com/multicluster-runtime/multicluster-runtime/pkg/multicluster"
 )
 
-// Manager is like crossplane-manager, without the cluster.Cluster interface.
-var _ manager.Manager = &probe{}
-
-type probe struct {
-	Manager
-	cluster.Cluster
-}
-
-// Add adds a runnable.
-func (p *probe) Add(_ manager.Runnable) error {
-	return nil
-}
-
-// Start starts the manager.
-func (p *probe) Start(_ context.Context) error {
-	return nil
-}
-
 // LocalCluster is the name of the local cluster.
 const LocalCluster = ""
 
 // Manager is a multi-cluster-aware manager, like the controller-runtime Cluster,
-// but without the direct cluster.Cluster methods.
+// but without the direct embedding of cluster.Cluster.
 type Manager interface {
 	// Add will set requested dependencies on the component, and cause the component to be
 	// started when Start is called.
@@ -111,7 +93,11 @@ type Manager interface {
 	// ClusterFromContext returns the default cluster set in the context.
 	ClusterFromContext(ctx context.Context) (cluster.Cluster, error)
 
-	// GetLocalManager returns the underlying controller-runtime manager of the host.
+	// GetManager returns a manager for the given cluster name.
+	GetManager(ctx context.Context, clusterName string) (manager.Manager, error)
+
+	// GetLocalManager returns the underlying controller-runtime manager of the
+	// host. This is equivalent to GetManager(LocalCluster).
 	GetLocalManager() manager.Manager
 
 	// GetProvider returns the multicluster provider, or nil if it is not set.
@@ -216,4 +202,31 @@ func (m *mcManager) Engage(ctx context.Context, name string, cl cluster.Cluster)
 		}
 	}
 	return nil //nolint:govet // cancel is called in the error case only.
+}
+
+func (m *mcManager) GetManager(ctx context.Context, clusterName string) (manager.Manager, error) {
+	cl, err := m.GetCluster(ctx, clusterName)
+	if err != nil {
+		return nil, err
+	}
+	return &scopedManager{
+		Manager: m,
+		Cluster: cl,
+	}, nil
+}
+
+var _ manager.Manager = &scopedManager{}
+
+type scopedManager struct {
+	Manager
+	cluster.Cluster
+}
+
+func (p *scopedManager) Add(r manager.Runnable) error {
+	return p.Manager.GetLocalManager().Add(r)
+}
+
+// Start starts the manager.
+func (p *scopedManager) Start(ctx context.Context) error {
+	return p.Manager.GetLocalManager().Start(ctx)
 }
