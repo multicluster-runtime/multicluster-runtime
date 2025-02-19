@@ -18,14 +18,16 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 
+	"golang.org/x/sync/errgroup"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/envtest"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+
+	ctrl "sigs.k8s.io/controller-runtime"
+	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/manager/signals"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -37,42 +39,23 @@ import (
 )
 
 func main() {
-	log.SetLogger(zap.New(zap.UseDevMode(true)))
-
+	ctrllog.SetLogger(zap.New(zap.UseDevMode(true)))
+	entryLog := ctrllog.Log.WithName("entrypoint")
 	ctx := signals.SetupSignalHandler()
-	entryLog := log.Log.WithName("entrypoint")
 
-	testEnv := &envtest.Environment{}
-	cfg, err := testEnv.Start()
+	provider := kind.New()
+	mgr, err := mcmanager.New(ctrl.GetConfigOrDie(), provider, manager.Options{})
 	if err != nil {
-		entryLog.Error(err, "failed to start local environment")
+		entryLog.Error(err, "unable to create manager")
 		os.Exit(1)
 	}
-	defer func() {
-		if testEnv == nil {
-			return
-		}
-		if err := testEnv.Stop(); err != nil {
-			entryLog.Error(err, "failed to stop local environment")
-			os.Exit(1)
-		}
-	}()
 
-	// Setup a Manager, note that this not yet engages clusters, only makes them available.
-	entryLog.Info("Setting up manager")
-	provider := kind.New()
-	mgr, err := mcmanager.New(cfg, provider, manager.Options{})
-	if err != nil {
-		entryLog.Error(err, "unable to set up overall controller manager")
-		os.Exit(1) //nolint:gocritic // We want to return an error RC.
-	}
-
-	if err := mcbuilder.ControllerManagedBy(mgr).
+	err = mcbuilder.ControllerManagedBy(mgr).
 		Named("multicluster-configmaps").
 		For(&corev1.ConfigMap{}).
 		Complete(mcreconcile.Func(
 			func(ctx context.Context, req mcreconcile.Request) (ctrl.Result, error) {
-				log := log.FromContext(ctx).WithValues("cluster", req.ClusterName)
+				log := ctrllog.FromContext(ctx).WithValues("cluster", req.ClusterName)
 				log.Info("Reconciling ConfigMap")
 
 				cl, err := mgr.GetCluster(ctx, req.ClusterName)
@@ -88,26 +71,33 @@ func main() {
 					return reconcile.Result{}, err
 				}
 
-				log.Info("Found ConfigMap", "uid", cm.UID)
+				log.Info("ConfigMap %s/%s in cluster %q", cm.Namespace, cm.Name, req.ClusterName)
 
 				return ctrl.Result{}, nil
 			},
-		)); err != nil {
-		entryLog.Error(err, "failed to build controller")
+		))
+	if err != nil {
+		entryLog.Error(err, "unable to create controller")
 		os.Exit(1)
 	}
 
-	entryLog.Info("Starting provider")
-	go func() {
-		if err := provider.Run(ctx, mgr); err != nil {
-			entryLog.Error(err, "unable to run provider")
-			os.Exit(1)
-		}
-	}()
-
-	entryLog.Info("Starting manager")
-	if err := mgr.Start(ctx); err != nil {
-		entryLog.Error(err, "unable to run manager")
+	// Starting everything.
+	g, ctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		return ignoreCanceled(provider.Run(ctx, mgr))
+	})
+	g.Go(func() error {
+		return ignoreCanceled(mgr.Start(ctx))
+	})
+	if err := g.Wait(); err != nil {
+		entryLog.Error(err, "unable to start")
 		os.Exit(1)
 	}
+}
+
+func ignoreCanceled(err error) error {
+	if errors.Is(err, context.Canceled) {
+		return nil
+	}
+	return err
 }

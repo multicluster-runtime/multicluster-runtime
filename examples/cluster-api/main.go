@@ -27,9 +27,10 @@ import (
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
 	capiv1beta1 "sigs.k8s.io/cluster-api/api/v1beta1"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/log"
+	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/manager/signals"
@@ -47,10 +48,9 @@ func init() {
 }
 
 func main() {
-	log.SetLogger(zap.New(zap.UseDevMode(true)))
-
+	ctrllog.SetLogger(zap.New(zap.UseDevMode(true)))
+	entryLog := ctrllog.Log.WithName("entrypoint")
 	ctx := signals.SetupSignalHandler()
-	entryLog := log.Log.WithName("entrypoint")
 
 	// Start local manager to read the Cluster-API objects.
 	cfg, err := ctrl.GetConfig()
@@ -97,7 +97,7 @@ func main() {
 		For(&corev1.ConfigMap{}).
 		Complete(mcreconcile.Func(
 			func(ctx context.Context, req mcreconcile.Request) (ctrl.Result, error) {
-				log := log.FromContext(ctx).WithValues("cluster", req.ClusterName)
+				log := ctrllog.FromContext(ctx).WithValues("cluster", req.ClusterName)
 				log.Info("Reconciling ConfigMap")
 
 				cl, err := mcMgr.GetCluster(ctx, req.ClusterName)
@@ -113,7 +113,7 @@ func main() {
 					return reconcile.Result{}, err
 				}
 
-				log.Info("Found ConfigMap", "uid", cm.UID)
+				log.Info("ConfigMap %s/%s in cluster %q", cm.Namespace, cm.Name, req.ClusterName)
 
 				return ctrl.Result{}, nil
 			},
@@ -134,7 +134,7 @@ func main() {
 		return ignoreCanceled(mcMgr.Start(ctx))
 	})
 	if err := g.Wait(); err != nil {
-		entryLog.Error(err, "unable to run manager")
+		entryLog.Error(err, "unable to start")
 		os.Exit(1)
 	}
 }
