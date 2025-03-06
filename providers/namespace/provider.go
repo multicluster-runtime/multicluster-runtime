@@ -22,14 +22,17 @@ import (
 	"sync"
 
 	"github.com/go-logr/logr"
-	"github.com/multicluster-runtime/multicluster-runtime/pkg/multicluster"
 
-	mcmanager "github.com/multicluster-runtime/multicluster-runtime/pkg/manager"
 	corev1 "k8s.io/api/core/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	toolscache "k8s.io/client-go/tools/cache"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+
+	mcmanager "github.com/multicluster-runtime/multicluster-runtime/pkg/manager"
+	"github.com/multicluster-runtime/multicluster-runtime/pkg/multicluster"
 )
 
 var _ multicluster.Provider = &Provider{}
@@ -125,11 +128,16 @@ func (p *Provider) Run(ctx context.Context, mgr mcmanager.Manager) error {
 }
 
 // Get returns a cluster by name.
-func (p *Provider) Get(ctx context.Context, clusterName string) (cluster.Cluster, error) {
+func (p *Provider) Get(_ context.Context, clusterName string) (cluster.Cluster, error) {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 	if cl, ok := p.clusters[clusterName]; ok {
 		return cl, nil
 	}
 	return nil, fmt.Errorf("cluster %s not found", clusterName)
+}
+
+// IndexField indexes a field on all clusters.
+func (p *Provider) IndexField(ctx context.Context, obj client.Object, field string, extractValue client.IndexerFunc) error {
+	return p.cluster.GetFieldIndexer().IndexField(ctx, obj, field, extractValue)
 }

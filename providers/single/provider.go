@@ -20,9 +20,11 @@ import (
 	"context"
 	"fmt"
 
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/cluster"
+
 	mcmanager "github.com/multicluster-runtime/multicluster-runtime/pkg/manager"
 	"github.com/multicluster-runtime/multicluster-runtime/pkg/multicluster"
-	"sigs.k8s.io/controller-runtime/pkg/cluster"
 )
 
 var _ multicluster.Provider = &Provider{}
@@ -54,4 +56,9 @@ func (p *Provider) Get(_ context.Context, clusterName string) (cluster.Cluster, 
 		return p.cl, nil
 	}
 	return nil, fmt.Errorf("cluster %s not found", clusterName)
+}
+
+// IndexField calls IndexField on the single cluster.
+func (p *Provider) IndexField(ctx context.Context, obj client.Object, field string, extractValue client.IndexerFunc) error {
+	return p.cl.GetFieldIndexer().IndexField(ctx, obj, field, extractValue)
 }
