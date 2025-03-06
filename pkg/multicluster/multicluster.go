@@ -19,6 +19,7 @@ package multicluster
 import (
 	"context"
 
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
 )
 
@@ -55,4 +56,8 @@ type Provider interface {
 	// If no cluster is known to the provider under the given cluster name,
 	// an error should be returned.
 	Get(ctx context.Context, clusterName string) (cluster.Cluster, error)
+
+	// IndexField indexes the given object by the given field on all engaged
+	// clusters, current and future.
+	IndexField(ctx context.Context, obj client.Object, field string, extractValue client.IndexerFunc) error
 }
