@@ -45,23 +45,23 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("Provider Namespace", func() {
-	Describe("New", func() {
-		It("should return success if given valid objects", func(ctx context.Context) {
-			cli, err := client.New(cfg, client.Options{})
-			Expect(err).NotTo(HaveOccurred())
+var _ = Describe("Provider Namespace", Ordered, func() {
+	ctx, cancel := context.WithCancel(context.Background())
+	g, ctx := errgroup.WithContext(ctx)
 
-			By("Creating Namespace and ConfigMap objects")
-			runtime.Must(client.IgnoreAlreadyExists(cli.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "zoo"}})))
-			runtime.Must(client.IgnoreAlreadyExists(cli.Create(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "zoo", Name: "elephant", Labels: map[string]string{"type": "animal"}}})))
-			runtime.Must(client.IgnoreAlreadyExists(cli.Create(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "zoo", Name: "lion", Labels: map[string]string{"type": "animal"}}})))
-			runtime.Must(client.IgnoreAlreadyExists(cli.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "jungle"}})))
-			runtime.Must(client.IgnoreAlreadyExists(cli.Create(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "jungle", Name: "monkey", Labels: map[string]string{"type": "animal"}}})))
-			runtime.Must(client.IgnoreAlreadyExists(cli.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "island"}})))
-			runtime.Must(client.IgnoreAlreadyExists(cli.Create(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "island", Name: "bird", Labels: map[string]string{"type": "animal"}}})))
+	var provider *Provider
+	var cl cluster.Cluster
+	var mgr mcmanager.Manager
+	var cli client.Client
 
-			By("Setting up the provider")
-			cl, err := cluster.New(cfg, WithClusterNameIndex(), func(options *cluster.Options) {
+	BeforeAll(func() {
+		var err error
+		cli, err = client.New(cfg, client.Options{})
+		Expect(err).NotTo(HaveOccurred())
+
+		By("Setting up the provider against the host cluster", func() {
+			var err error
+			cl, err = cluster.New(cfg, WithClusterNameIndex(), func(options *cluster.Options) {
 				options.Cache.ByObject = map[client.Object]cache.ByObject{
 					&corev1.ConfigMap{}: {
 						Label: labels.Set{"type": "animal"}.AsSelector(),
@@ -69,19 +69,22 @@ var _ = Describe("Provider Namespace", func() {
 				}
 			})
 			Expect(err).NotTo(HaveOccurred())
-			provider := New(cl)
+			provider = New(cl)
+		})
 
-			By("Setting up the cluster-aware manager, with the provider to lookup clusters")
-			mgr, err := mcmanager.New(cfg, provider, manager.Options{
+		By("Setting up the cluster-aware manager, with the provider to lookup clusters", func() {
+			var err error
+			mgr, err = mcmanager.New(cfg, provider, manager.Options{
 				NewCache: func(config *rest.Config, opts cache.Options) (cache.Cache, error) {
 					// wrap cache to turn IndexField calls into cluster-scoped indexes.
 					return &NamespaceScopeableCache{Cache: cl.GetCache()}, nil
 				},
 			})
 			Expect(err).NotTo(HaveOccurred())
+		})
 
-			By("Setting up the controller")
-			err = mcbuilder.ControllerManagedBy(mgr).
+		By("Setting up the controller feeding the animals", func() {
+			err := mcbuilder.ControllerManagedBy(mgr).
 				Named("fleet-ns-configmap-controller").
 				For(&corev1.ConfigMap{}).
 				Complete(mcreconcile.Func(
@@ -111,39 +114,52 @@ var _ = Describe("Provider Namespace", func() {
 					},
 				))
 			Expect(err).NotTo(HaveOccurred())
+		})
 
-			By("Starting provider")
-			ctx, cancel := context.WithCancel(ctx)
-			g, ctx := errgroup.WithContext(ctx)
-			defer func() {
-				cancel()
-				By("Waiting for all components to finish")
-				err = g.Wait()
-				Expect(err).NotTo(HaveOccurred())
-			}()
+		By("Starting the provider, cluster, manager, and controller", func() {
 			g.Go(func() error {
 				return ignoreCanceled(provider.Run(ctx, mgr))
 			})
-
-			By("Starting cluster")
 			g.Go(func() error {
 				return ignoreCanceled(cl.Start(ctx))
 			})
-
-			By("Starting cluster-aware manager")
 			g.Go(func() error {
 				return ignoreCanceled(mgr.Start(ctx))
 			})
+		})
+	})
 
-			err = cli.Create(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "zoo", Name: "tiger", Labels: map[string]string{"type": "animal"}}})
+	It("runs a multi-cluster controller", func(ctx context.Context) {
+		By("Creating some example namespaces and configmaps", func() {
+			runtime.Must(client.IgnoreAlreadyExists(cli.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "zoo"}})))
+			runtime.Must(client.IgnoreAlreadyExists(cli.Create(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "zoo", Name: "elephant", Labels: map[string]string{"type": "animal"}}})))
+			runtime.Must(client.IgnoreAlreadyExists(cli.Create(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "zoo", Name: "lion", Labels: map[string]string{"type": "animal"}}})))
+			runtime.Must(client.IgnoreAlreadyExists(cli.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "jungle"}})))
+			runtime.Must(client.IgnoreAlreadyExists(cli.Create(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "jungle", Name: "monkey", Labels: map[string]string{"type": "animal"}}})))
+			runtime.Must(client.IgnoreAlreadyExists(cli.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "island"}})))
+			runtime.Must(client.IgnoreAlreadyExists(cli.Create(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "island", Name: "bird", Labels: map[string]string{"type": "animal"}}})))
+		})
+
+		By("Creating a new configmap", func() {
+			err := cli.Create(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "zoo", Name: "tiger", Labels: map[string]string{"type": "animal"}}})
 			Expect(err).NotTo(HaveOccurred())
+		})
 
-			Eventually(func() string {
-				cm := &corev1.ConfigMap{}
-				err := cli.Get(ctx, client.ObjectKey{Namespace: "zoo", Name: "tiger"}, cm)
-				Expect(err).NotTo(HaveOccurred())
-				return cm.Data["stomach"]
-			}, "10s").Should(Equal("food"))
+		Eventually(func() string {
+			cm := &corev1.ConfigMap{}
+			err := cli.Get(ctx, client.ObjectKey{Namespace: "zoo", Name: "tiger"}, cm)
+			Expect(err).NotTo(HaveOccurred())
+			return cm.Data["stomach"]
+		}, "10s").Should(Equal("food"))
+	})
+
+	AfterAll(func() {
+		By("Stopping the provider, cluster, manager, and controller", func() {
+			cancel()
+		})
+		By("Waiting for the error group to finish", func() {
+			err := g.Wait()
+			Expect(err).NotTo(HaveOccurred())
 		})
 	})
 })
