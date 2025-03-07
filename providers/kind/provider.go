@@ -24,12 +24,12 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-
 	mcmanager "github.com/multicluster-runtime/multicluster-runtime/pkg/manager"
 	"github.com/multicluster-runtime/multicluster-runtime/pkg/multicluster"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/clientcmd"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	kind "sigs.k8s.io/kind/pkg/cluster"
@@ -46,6 +46,12 @@ func New() *Provider {
 	}
 }
 
+type index struct {
+	object       client.Object
+	field        string
+	extractValue client.IndexerFunc
+}
+
 // Provider is a cluster Provider that works with a local Kind instance.
 type Provider struct {
 	opts      []cluster.Option
@@ -53,13 +59,14 @@ type Provider struct {
 	lock      sync.RWMutex
 	clusters  map[string]cluster.Cluster
 	cancelFns map[string]context.CancelFunc
+	indexers  []index
 }
 
 // Get returns the cluster with the given name, if it is known.
-func (k *Provider) Get(ctx context.Context, clusterName string) (cluster.Cluster, error) {
-	k.lock.RLock()
-	defer k.lock.RUnlock()
-	if cl, ok := k.clusters[clusterName]; ok {
+func (p *Provider) Get(ctx context.Context, clusterName string) (cluster.Cluster, error) {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	if cl, ok := p.clusters[clusterName]; ok {
 		return cl, nil
 	}
 
@@ -67,8 +74,8 @@ func (k *Provider) Get(ctx context.Context, clusterName string) (cluster.Cluster
 }
 
 // Run starts the provider and blocks.
-func (k *Provider) Run(ctx context.Context, mgr mcmanager.Manager) error {
-	k.log.Info("Starting kind cluster provider")
+func (p *Provider) Run(ctx context.Context, mgr mcmanager.Manager) error {
+	p.log.Info("Starting kind cluster provider")
 
 	provider := kind.NewProvider()
 
@@ -80,40 +87,45 @@ func (k *Provider) Run(ctx context.Context, mgr mcmanager.Manager) error {
 	return wait.PollUntilContextCancel(ctx, time.Second*2, true, func(ctx context.Context) (done bool, err error) {
 		list, err := provider.List()
 		if err != nil {
-			k.log.Info("failed to list kind clusters", "error", err)
+			p.log.Info("failed to list kind clusters", "error", err)
 			return false, nil // keep going
 		}
 
 		// start new clusters
 		for _, clusterName := range list {
-			log := k.log.WithValues("cluster", clusterName)
+			log := p.log.WithValues("cluster", clusterName)
 
 			// skip?
 			if !strings.HasPrefix(clusterName, "fleet-") {
 				continue
 			}
-			k.lock.RLock()
-			if _, ok := k.clusters[clusterName]; ok {
-				k.lock.RUnlock()
+			p.lock.RLock()
+			if _, ok := p.clusters[clusterName]; ok {
+				p.lock.RUnlock()
 				continue
 			}
-			k.lock.RUnlock()
+			p.lock.RUnlock()
 
 			// create a new cluster
 			kubeconfig, err := provider.KubeConfig(clusterName, false)
 			if err != nil {
-				k.log.Info("failed to get kind kubeconfig", "error", err)
+				p.log.Info("failed to get kind kubeconfig", "error", err)
 				return false, nil // keep going
 			}
 			cfg, err := clientcmd.RESTConfigFromKubeConfig([]byte(kubeconfig))
 			if err != nil {
-				k.log.Info("failed to create rest config", "error", err)
+				p.log.Info("failed to create rest config", "error", err)
 				return false, nil // keep going
 			}
-			cl, err := cluster.New(cfg, k.opts...)
+			cl, err := cluster.New(cfg, p.opts...)
 			if err != nil {
-				k.log.Info("failed to create cluster", "error", err)
+				p.log.Info("failed to create cluster", "error", err)
 				return false, nil // keep going
+			}
+			for _, idx := range p.indexers {
+				if err := cl.GetCache().IndexField(ctx, idx.object, idx.field, idx.extractValue); err != nil {
+					return false, fmt.Errorf("failed to index field %q: %w", idx.field, err)
+				}
 			}
 			clusterCtx, cancel := context.WithCancel(ctx)
 			go func() {
@@ -129,21 +141,21 @@ func (k *Provider) Run(ctx context.Context, mgr mcmanager.Manager) error {
 			}
 
 			// remember
-			k.lock.Lock()
-			k.clusters[clusterName] = cl
-			k.cancelFns[clusterName] = cancel
-			k.lock.Unlock()
+			p.lock.Lock()
+			p.clusters[clusterName] = cl
+			p.cancelFns[clusterName] = cancel
+			p.lock.Unlock()
 
-			k.log.Info("Added new cluster", "cluster", clusterName)
+			p.log.Info("Added new cluster", "cluster", clusterName)
 
 			// engage manager
 			if mgr != nil {
 				if err := mgr.Engage(clusterCtx, clusterName, cl); err != nil {
 					log.Error(err, "failed to engage manager")
-					k.lock.Lock()
-					delete(k.clusters, clusterName)
-					delete(k.cancelFns, clusterName)
-					k.lock.Unlock()
+					p.lock.Lock()
+					delete(p.clusters, clusterName)
+					delete(p.cancelFns, clusterName)
+					p.lock.Unlock()
 					return false, nil
 				}
 			}
@@ -151,25 +163,47 @@ func (k *Provider) Run(ctx context.Context, mgr mcmanager.Manager) error {
 
 		// remove old clusters
 		kindNames := sets.New(list...)
-		k.lock.Lock()
-		clusterNames := make([]string, 0, len(k.clusters))
-		for name := range k.clusters {
+		p.lock.Lock()
+		clusterNames := make([]string, 0, len(p.clusters))
+		for name := range p.clusters {
 			clusterNames = append(clusterNames, name)
 		}
-		k.lock.Unlock()
+		p.lock.Unlock()
 		for _, name := range clusterNames {
 			if !kindNames.Has(name) {
 				// stop and forget
-				k.lock.Lock()
-				k.cancelFns[name]()
-				delete(k.clusters, name)
-				delete(k.cancelFns, name)
-				k.lock.Unlock()
+				p.lock.Lock()
+				p.cancelFns[name]()
+				delete(p.clusters, name)
+				delete(p.cancelFns, name)
+				p.lock.Unlock()
 
-				k.log.Info("Cluster removed", "cluster", name)
+				p.log.Info("Cluster removed", "cluster", name)
 			}
 		}
 
 		return false, nil
 	})
+}
+
+// IndexField indexes a field on all clusters, existing and future.
+func (p *Provider) IndexField(ctx context.Context, obj client.Object, field string, extractValue client.IndexerFunc) error {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
+	// save for future clusters.
+	p.indexers = append(p.indexers, index{
+		object:       obj,
+		field:        field,
+		extractValue: extractValue,
+	})
+
+	// apply to existing clusters.
+	for name, cl := range p.clusters {
+		if err := cl.GetCache().IndexField(ctx, obj, field, extractValue); err != nil {
+			return fmt.Errorf("failed to index field %q on cluster %q: %w", field, name, err)
+		}
+	}
+
+	return nil
 }

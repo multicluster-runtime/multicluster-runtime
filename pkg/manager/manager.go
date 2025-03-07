@@ -25,6 +25,7 @@ import (
 
 	"k8s.io/client-go/rest"
 
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/config"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
@@ -102,6 +103,10 @@ type Manager interface {
 
 	// GetProvider returns the multicluster provider, or nil if it is not set.
 	GetProvider() multicluster.Provider
+
+	// GetFieldIndexer returns a client.FieldIndexer that adds indexes to the
+	// multicluster provider (if set) and the local manager.
+	GetFieldIndexer() client.FieldIndexer
 
 	multicluster.Aware
 }
@@ -215,6 +220,26 @@ func (m *mcManager) GetManager(ctx context.Context, clusterName string) (manager
 	}, nil
 }
 
+type fieldIndexerFunc func(context.Context, client.Object, string, client.IndexerFunc) error
+
+func (f fieldIndexerFunc) IndexField(ctx context.Context, obj client.Object, fieldName string, indexerFunc client.IndexerFunc) error {
+	return f(ctx, obj, fieldName, indexerFunc)
+}
+
+// GetFieldIndexer returns a client.FieldIndexer that adds indexes to the
+// multicluster provider (if set) and to the local cluster if not.
+func (m *mcManager) GetFieldIndexer() client.FieldIndexer {
+	return fieldIndexerFunc(func(ctx context.Context, obj client.Object, fieldName string, indexerFunc client.IndexerFunc) error {
+		if m.provider != nil {
+			if err := m.provider.IndexField(ctx, obj, fieldName, indexerFunc); err != nil {
+				return fmt.Errorf("failed to index field %q on multi-cluster provider: %w", fieldName, err)
+			}
+			return nil
+		}
+		return m.Manager.GetFieldIndexer().IndexField(ctx, obj, fieldName, indexerFunc)
+	})
+}
+
 var _ manager.Manager = &scopedManager{}
 
 type scopedManager struct {
@@ -222,6 +247,7 @@ type scopedManager struct {
 	cluster.Cluster
 }
 
+// Add adds a Runnable to the manager.
 func (p *scopedManager) Add(r manager.Runnable) error {
 	return p.Manager.GetLocalManager().Add(r)
 }
@@ -229,4 +255,9 @@ func (p *scopedManager) Add(r manager.Runnable) error {
 // Start starts the manager.
 func (p *scopedManager) Start(ctx context.Context) error {
 	return p.Manager.GetLocalManager().Start(ctx)
+}
+
+// GetFieldIndexer returns the field indexer.
+func (p *scopedManager) GetFieldIndexer() client.FieldIndexer {
+	return p.Cluster.GetFieldIndexer()
 }
