@@ -227,13 +227,14 @@ func (f fieldIndexerFunc) IndexField(ctx context.Context, obj client.Object, fie
 }
 
 // GetFieldIndexer returns a client.FieldIndexer that adds indexes to the
-// multicluster provider (if set) and the local manager.
+// multicluster provider (if set) and to the local cluster if not.
 func (m *mcManager) GetFieldIndexer() client.FieldIndexer {
 	return fieldIndexerFunc(func(ctx context.Context, obj client.Object, fieldName string, indexerFunc client.IndexerFunc) error {
 		if m.provider != nil {
 			if err := m.provider.IndexField(ctx, obj, fieldName, indexerFunc); err != nil {
 				return fmt.Errorf("failed to index field %q on multi-cluster provider: %w", fieldName, err)
 			}
+			return nil
 		}
 		return m.Manager.GetFieldIndexer().IndexField(ctx, obj, fieldName, indexerFunc)
 	})
