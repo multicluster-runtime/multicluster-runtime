@@ -7,8 +7,8 @@ replace github.com/multicluster-runtime/multicluster-runtime => ../..
 replace github.com/multicluster-runtime/multicluster-runtime/providers/kind => ../../providers/kind
 
 require (
-	github.com/multicluster-runtime/multicluster-runtime v0.20.0-alpha.3
-	github.com/multicluster-runtime/multicluster-runtime/providers/kind v0.20.0-alpha.3
+	github.com/multicluster-runtime/multicluster-runtime v0.20.0-alpha.5
+	github.com/multicluster-runtime/multicluster-runtime/providers/kind v0.20.0-alpha.5
 	golang.org/x/sync v0.8.0
 	k8s.io/api v0.32.1
 	k8s.io/apimachinery v0.32.1
