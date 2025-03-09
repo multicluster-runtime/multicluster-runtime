@@ -8,7 +8,7 @@ replace github.com/multicluster-runtime/multicluster-runtime/providers/cluster-a
 
 require (
 	github.com/go-logr/logr v1.4.2
-	github.com/multicluster-runtime/multicluster-runtime v0.20.0-alpha.3
+	github.com/multicluster-runtime/multicluster-runtime v0.20.0-alpha.5
 	k8s.io/apimachinery v0.32.2
 	k8s.io/client-go v0.32.2
 	sigs.k8s.io/cluster-api v1.9.4
