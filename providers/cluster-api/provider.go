@@ -23,22 +23,24 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	capiv1beta1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	utilkubeconfig "sigs.k8s.io/cluster-api/util/kubeconfig"
+
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
-	capiv1beta1 "sigs.k8s.io/cluster-api/api/v1beta1"
-	utilkubeconfig "sigs.k8s.io/cluster-api/util/kubeconfig"
+	"k8s.io/client-go/tools/clientcmd"
+
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	mcmanager "github.com/multicluster-runtime/multicluster-runtime/pkg/manager"
 	"github.com/multicluster-runtime/multicluster-runtime/pkg/multicluster"
-	"k8s.io/client-go/tools/clientcmd"
-	"sigs.k8s.io/controller-runtime/pkg/cluster"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 var _ multicluster.Provider = &Provider{}

@@ -24,15 +24,18 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	mcmanager "github.com/multicluster-runtime/multicluster-runtime/pkg/manager"
-	"github.com/multicluster-runtime/multicluster-runtime/pkg/multicluster"
+	kind "sigs.k8s.io/kind/pkg/cluster"
+
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/clientcmd"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	kind "sigs.k8s.io/kind/pkg/cluster"
+
+	mcmanager "github.com/multicluster-runtime/multicluster-runtime/pkg/manager"
+	"github.com/multicluster-runtime/multicluster-runtime/pkg/multicluster"
 )
 
 var _ multicluster.Provider = &Provider{}
