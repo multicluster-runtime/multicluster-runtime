@@ -183,3 +183,13 @@ verify-apidiff: $(GO_APIDIFF) ## Check for API differences
 
 go-version: ## Print the go version we use to compile our binaries and images
 	@echo $(GO_VERSION)
+
+WHAT ?=
+imports:
+	@if [ -n "$(WHAT)" ]; then \
+		$(GOLANGCI_LINT) run --enable-only=gci --fix --fast $(WHAT); \
+	else \
+	  for MOD in . $$(git ls-files '**/go.mod' | sed 's,/go.mod,,'); do \
+		(cd $$MOD; $(GOLANGCI_LINT) run --enable-only=gci --fix --fast); \
+	  done; \
+	fi
