@@ -19,18 +19,18 @@ package namespace
 import (
 	"context"
 	"errors"
+	"strconv"
 
 	"golang.org/x/sync/errgroup"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/client-go/rest"
+	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/client-go/util/retry"
 
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -61,25 +61,14 @@ var _ = Describe("Provider Namespace", Ordered, func() {
 
 		By("Setting up the provider against the host cluster", func() {
 			var err error
-			cl, err = cluster.New(cfg, WithClusterNameIndex(), func(options *cluster.Options) {
-				options.Cache.ByObject = map[client.Object]cache.ByObject{
-					&corev1.ConfigMap{}: {
-						Label: labels.Set{"type": "animal"}.AsSelector(),
-					},
-				}
-			})
+			cl, err = cluster.New(cfg)
 			Expect(err).NotTo(HaveOccurred())
 			provider = New(cl)
 		})
 
 		By("Setting up the cluster-aware manager, with the provider to lookup clusters", func() {
 			var err error
-			mgr, err = mcmanager.New(cfg, provider, manager.Options{
-				NewCache: func(config *rest.Config, opts cache.Options) (cache.Cache, error) {
-					// wrap cache to turn IndexField calls into cluster-scoped indexes.
-					return &NamespaceScopeableCache{Cache: cl.GetCache()}, nil
-				},
-			})
+			mgr, err = mcmanager.New(cfg, provider, manager.Options{})
 			Expect(err).NotTo(HaveOccurred())
 		})
 

@@ -23,16 +23,15 @@ import (
 
 	flag "github.com/spf13/pflag"
 	"golang.org/x/sync/errgroup"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
 
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
@@ -103,17 +102,16 @@ func main() {
 	runtime.Must(client.IgnoreAlreadyExists(cli.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "island"}})))
 	runtime.Must(client.IgnoreAlreadyExists(cli.Create(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "island", Name: "bird"}})))
 
-	cl, err := cluster.New(cfg, namespace.WithClusterNameIndex())
+	cl, err := cluster.New(cfg)
+	if err != nil {
+		entryLog.Error(err, "failed to create cluster")
+		os.Exit(1)
+	}
 	provider := namespace.New(cl)
 
 	// Setup a cluster-aware Manager, with the provider to lookup clusters.
 	entryLog.Info("Setting up cluster-aware manager")
-	mgr, err := mcmanager.New(cfg, provider, manager.Options{
-		NewCache: func(config *rest.Config, opts cache.Options) (cache.Cache, error) {
-			// wrap cache to turn IndexField calls into cluster-scoped indexes.
-			return &namespace.NamespaceScopeableCache{Cache: cl.GetCache()}, nil
-		},
-	})
+	mgr, err := mcmanager.New(cfg, provider, manager.Options{})
 	if err != nil {
 		entryLog.Error(err, "unable to set up overall controller manager")
 		os.Exit(1)

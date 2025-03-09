@@ -19,7 +19,6 @@ package namespace
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -31,13 +30,6 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-)
-
-const (
-	// ClusterNameIndex indexes object by cluster and name.
-	ClusterNameIndex = "cluster/name"
-	// ClusterIndex indexes object by cluster.
-	ClusterIndex = "cluster"
 )
 
 var _ cache.Cache = &NamespacedCache{}
@@ -68,26 +60,16 @@ func (c *NamespacedCache) List(ctx context.Context, list client.ObjectList, opts
 		o.ApplyToList(&listOpts)
 	}
 
-	switch {
-	case listOpts.FieldSelector != nil:
-		reqs := listOpts.FieldSelector.Requirements()
-		flds := make(map[string]string, len(reqs))
-		for i := range reqs {
-			flds[fmt.Sprintf("cluster/%s", reqs[i].Field)] = fmt.Sprintf("%s/%s", c.clusterName, reqs[i].Value)
-		}
-		opts = append(opts, client.MatchingFields(flds))
-	case listOpts.Namespace != "":
-		opts = append(opts, client.MatchingFields(map[string]string{ClusterIndex: c.clusterName}))
-		if c.clusterName == "*" {
-			listOpts.Namespace = ""
-		} else if listOpts.Namespace == corev1.NamespaceDefault {
-			listOpts.Namespace = c.clusterName
-		}
-	default:
-		opts = append(opts, client.MatchingFields(map[string]string{ClusterIndex: c.clusterName}))
+	if listOpts.Namespace != "" && listOpts.Namespace != corev1.NamespaceDefault {
+		return nil
 	}
 
-	if err := c.Cache.List(ctx, list, opts...); err != nil {
+	ns := c.clusterName
+	if ns == "*" {
+		ns = ""
+	}
+
+	if err := c.Cache.List(ctx, list, append(opts, client.InNamespace(ns))...); err != nil {
 		return err
 	}
 
@@ -200,27 +182,4 @@ func (i *ScopedInformer) AddEventHandlerWithResyncPeriod(handler toolscache.Reso
 // AddIndexers adds indexers to the informer.
 func (i *ScopedInformer) AddIndexers(indexers toolscache.Indexers) error {
 	return errors.New("indexes cannot be added to scoped informers")
-}
-
-// NamespaceScopeableCache is a cache that indexes objects by namespace.
-type NamespaceScopeableCache struct { //nolint:revive // Stuttering here is fine.
-	cache.Cache
-}
-
-// IndexField adds an index for the given object kind.
-func (f *NamespaceScopeableCache) IndexField(ctx context.Context, obj client.Object, field string, extractValue client.IndexerFunc) error {
-	return f.Cache.IndexField(ctx, obj, "cluster/"+field, func(obj client.Object) []string {
-		keys := extractValue(obj)
-		withCluster := make([]string, len(keys)*2)
-		for i, key := range keys {
-			withCluster[i] = fmt.Sprintf("%s/%s", obj.GetNamespace(), key)
-			withCluster[i+len(keys)] = fmt.Sprintf("*/%s", key)
-		}
-		return withCluster
-	})
-}
-
-// Start starts the cache.
-func (f *NamespaceScopeableCache) Start(ctx context.Context) error {
-	return nil // no-op as this is shared
 }
