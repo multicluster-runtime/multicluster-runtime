@@ -24,18 +24,11 @@ import (
 
 	"github.com/go-logr/logr"
 
-	"sigs.k8s.io/controller-runtime/pkg/source"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/ptr"
 
-	mccontroller "github.com/multicluster-runtime/multicluster-runtime/pkg/controller"
-	mchandler "github.com/multicluster-runtime/multicluster-runtime/pkg/handler"
-	mcmanager "github.com/multicluster-runtime/multicluster-runtime/pkg/manager"
-	mcreconcile "github.com/multicluster-runtime/multicluster-runtime/pkg/reconcile"
-	mcsource "github.com/multicluster-runtime/multicluster-runtime/pkg/source"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
@@ -43,6 +36,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
+
+	mccontroller "github.com/multicluster-runtime/multicluster-runtime/pkg/controller"
+	mchandler "github.com/multicluster-runtime/multicluster-runtime/pkg/handler"
+	mcmanager "github.com/multicluster-runtime/multicluster-runtime/pkg/manager"
+	mcreconcile "github.com/multicluster-runtime/multicluster-runtime/pkg/reconcile"
+	mcsource "github.com/multicluster-runtime/multicluster-runtime/pkg/source"
 )
 
 // project represents other forms that we can use to

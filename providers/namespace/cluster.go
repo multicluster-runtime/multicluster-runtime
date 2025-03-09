@@ -18,48 +18,13 @@ package namespace
 
 import (
 	"context"
-	"fmt"
-	"time"
 
-	apiruntime "k8s.io/apimachinery/pkg/runtime"
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	toolscache "k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
 )
-
-// WithClusterNameIndex adds indexers for cluster name and namespace.
-func WithClusterNameIndex() cluster.Option {
-	return func(options *cluster.Options) {
-		old := options.Cache.NewInformer
-		options.Cache.NewInformer = func(watcher toolscache.ListerWatcher, object apiruntime.Object, duration time.Duration, indexers toolscache.Indexers) toolscache.SharedIndexInformer {
-			var inf toolscache.SharedIndexInformer
-			if old != nil {
-				inf = old(watcher, object, duration, indexers)
-			} else {
-				inf = toolscache.NewSharedIndexInformer(watcher, object, duration, indexers)
-			}
-			if err := inf.AddIndexers(toolscache.Indexers{
-				ClusterNameIndex: func(obj any) ([]string, error) {
-					o := obj.(client.Object)
-					return []string{
-						fmt.Sprintf("%s/%s", o.GetNamespace(), o.GetName()),
-						fmt.Sprintf("%s/%s", "*", o.GetName()),
-					}, nil
-				},
-				ClusterIndex: func(obj any) ([]string, error) {
-					o := obj.(client.Object)
-					return []string{o.GetNamespace()}, nil
-				},
-			}); err != nil {
-				utilruntime.HandleError(fmt.Errorf("unable to add cluster name indexers: %w", err))
-			}
-			return inf
-		}
-	}
-}
 
 // NamespacedCluster is a cluster that operates on a specific namespace.
 type NamespacedCluster struct {

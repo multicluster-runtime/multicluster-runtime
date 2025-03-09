@@ -23,22 +23,24 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	capiv1beta1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	utilkubeconfig "sigs.k8s.io/cluster-api/util/kubeconfig"
+
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
-	capiv1beta1 "sigs.k8s.io/cluster-api/api/v1beta1"
-	utilkubeconfig "sigs.k8s.io/cluster-api/util/kubeconfig"
+	"k8s.io/client-go/tools/clientcmd"
+
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	mcmanager "github.com/multicluster-runtime/multicluster-runtime/pkg/manager"
 	"github.com/multicluster-runtime/multicluster-runtime/pkg/multicluster"
-	"k8s.io/client-go/tools/clientcmd"
-	"sigs.k8s.io/controller-runtime/pkg/cluster"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 var _ multicluster.Provider = &Provider{}
@@ -94,6 +96,12 @@ func New(localMgr manager.Manager, opts Options) (*Provider, error) {
 	return p, nil
 }
 
+type index struct {
+	object       client.Object
+	field        string
+	extractValue client.IndexerFunc
+}
+
 // Provider is a cluster Provider that works with Cluster-API.
 type Provider struct {
 	opts   Options
@@ -104,6 +112,7 @@ type Provider struct {
 	mcMgr     mcmanager.Manager
 	clusters  map[string]cluster.Cluster
 	cancelFns map[string]context.CancelFunc
+	indexers  []index
 }
 
 // Get returns the cluster with the given name, if it is known.
@@ -189,6 +198,11 @@ func (p *Provider) Reconcile(ctx context.Context, req reconcile.Request) (reconc
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("failed to create cluster: %w", err)
 	}
+	for _, idx := range p.indexers {
+		if err := cl.GetCache().IndexField(ctx, idx.object, idx.field, idx.extractValue); err != nil {
+			return reconcile.Result{}, fmt.Errorf("failed to index field %q: %w", idx.field, err)
+		}
+	}
 	clusterCtx, cancel := context.WithCancel(ctx)
 	go func() {
 		if err := cl.Start(clusterCtx); err != nil {
@@ -201,13 +215,13 @@ func (p *Provider) Reconcile(ctx context.Context, req reconcile.Request) (reconc
 		return reconcile.Result{}, fmt.Errorf("failed to sync cache")
 	}
 
-	// remember
+	// remember.
 	p.clusters[key] = cl
 	p.cancelFns[key] = cancel
 
 	p.log.Info("Added new cluster")
 
-	// engage manager
+	// engage manager.
 	if err := p.mcMgr.Engage(clusterCtx, key, cl); err != nil {
 		log.Error(err, "failed to engage manager")
 		delete(p.clusters, key)
@@ -216,4 +230,26 @@ func (p *Provider) Reconcile(ctx context.Context, req reconcile.Request) (reconc
 	}
 
 	return reconcile.Result{}, nil
+}
+
+// IndexField indexes a field on all clusters, existing and future.
+func (p *Provider) IndexField(ctx context.Context, obj client.Object, field string, extractValue client.IndexerFunc) error {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
+	// save for future clusters.
+	p.indexers = append(p.indexers, index{
+		object:       obj,
+		field:        field,
+		extractValue: extractValue,
+	})
+
+	// apply to existing clusters.
+	for name, cl := range p.clusters {
+		if err := cl.GetCache().IndexField(ctx, obj, field, extractValue); err != nil {
+			return fmt.Errorf("failed to index field %q on cluster %q: %w", field, name, err)
+		}
+	}
+
+	return nil
 }

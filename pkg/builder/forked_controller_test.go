@@ -23,8 +23,7 @@ import (
 	"sync/atomic"
 
 	"github.com/go-logr/logr"
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -34,7 +33,6 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/utils/ptr"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -44,12 +42,16 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	mccontroller "github.com/multicluster-runtime/multicluster-runtime/pkg/controller"
 	mchandler "github.com/multicluster-runtime/multicluster-runtime/pkg/handler"
 	mcmanager "github.com/multicluster-runtime/multicluster-runtime/pkg/manager"
 	mcreconcile "github.com/multicluster-runtime/multicluster-runtime/pkg/reconcile"
 	mcsource "github.com/multicluster-runtime/multicluster-runtime/pkg/source"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
 var _ untypedWatchesInput = (*WatchesInput[mcreconcile.Request])(nil)

@@ -19,20 +19,18 @@ package namespace
 import (
 	"context"
 	"errors"
+	"strconv"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
 	"golang.org/x/sync/errgroup"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/client-go/rest"
+	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/client-go/util/retry"
 
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -42,45 +40,40 @@ import (
 	mcbuilder "github.com/multicluster-runtime/multicluster-runtime/pkg/builder"
 	mcmanager "github.com/multicluster-runtime/multicluster-runtime/pkg/manager"
 	mcreconcile "github.com/multicluster-runtime/multicluster-runtime/pkg/reconcile"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("Provider Namespace", func() {
-	Describe("New", func() {
-		It("should return success if given valid objects", func(ctx context.Context) {
-			cli, err := client.New(cfg, client.Options{})
+var _ = Describe("Provider Namespace", Ordered, func() {
+	ctx, cancel := context.WithCancel(context.Background())
+	g, ctx := errgroup.WithContext(ctx)
+
+	var provider *Provider
+	var cl cluster.Cluster
+	var mgr mcmanager.Manager
+	var cli client.Client
+
+	BeforeAll(func() {
+		var err error
+		cli, err = client.New(cfg, client.Options{})
+		Expect(err).NotTo(HaveOccurred())
+
+		By("Setting up the provider against the host cluster", func() {
+			var err error
+			cl, err = cluster.New(cfg)
 			Expect(err).NotTo(HaveOccurred())
+			provider = New(cl)
+		})
 
-			By("Creating Namespace and ConfigMap objects")
-			runtime.Must(client.IgnoreAlreadyExists(cli.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "zoo"}})))
-			runtime.Must(client.IgnoreAlreadyExists(cli.Create(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "zoo", Name: "elephant", Labels: map[string]string{"type": "animal"}}})))
-			runtime.Must(client.IgnoreAlreadyExists(cli.Create(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "zoo", Name: "lion", Labels: map[string]string{"type": "animal"}}})))
-			runtime.Must(client.IgnoreAlreadyExists(cli.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "jungle"}})))
-			runtime.Must(client.IgnoreAlreadyExists(cli.Create(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "jungle", Name: "monkey", Labels: map[string]string{"type": "animal"}}})))
-			runtime.Must(client.IgnoreAlreadyExists(cli.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "island"}})))
-			runtime.Must(client.IgnoreAlreadyExists(cli.Create(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "island", Name: "bird", Labels: map[string]string{"type": "animal"}}})))
-
-			By("Setting up the provider")
-			cl, err := cluster.New(cfg, WithClusterNameIndex(), func(options *cluster.Options) {
-				options.Cache.ByObject = map[client.Object]cache.ByObject{
-					&corev1.ConfigMap{}: {
-						Label: labels.Set{"type": "animal"}.AsSelector(),
-					},
-				}
-			})
+		By("Setting up the cluster-aware manager, with the provider to lookup clusters", func() {
+			var err error
+			mgr, err = mcmanager.New(cfg, provider, manager.Options{})
 			Expect(err).NotTo(HaveOccurred())
-			provider := New(cl)
+		})
 
-			By("Setting up the cluster-aware manager, with the provider to lookup clusters")
-			mgr, err := mcmanager.New(cfg, provider, manager.Options{
-				NewCache: func(config *rest.Config, opts cache.Options) (cache.Cache, error) {
-					// wrap cache to turn IndexField calls into cluster-scoped indexes.
-					return &NamespaceScopeableCache{Cache: cl.GetCache()}, nil
-				},
-			})
-			Expect(err).NotTo(HaveOccurred())
-
-			By("Setting up the controller")
-			err = mcbuilder.ControllerManagedBy(mgr).
+		By("Setting up the controller feeding the animals", func() {
+			err := mcbuilder.ControllerManagedBy(mgr).
 				Named("fleet-ns-configmap-controller").
 				For(&corev1.ConfigMap{}).
 				Complete(mcreconcile.Func(
@@ -101,6 +94,10 @@ var _ = Describe("Provider Namespace", func() {
 							}
 							return reconcile.Result{}, err
 						}
+						if cm.GetLabels()["type"] != "animal" {
+							return reconcile.Result{}, nil
+						}
+
 						cm.Data = map[string]string{"stomach": "food"}
 						if err := cl.GetClient().Update(ctx, cm); err != nil {
 							return reconcile.Result{}, err
@@ -111,38 +108,151 @@ var _ = Describe("Provider Namespace", func() {
 				))
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Starting provider")
-			ctx, cancel := context.WithCancel(ctx)
-			g, ctx := errgroup.WithContext(ctx)
-			defer func() {
-				cancel()
-				By("Waiting for all components to finish")
-				err = g.Wait()
+			By("Adding an index to the provider clusters", func() {
+				err := mgr.GetFieldIndexer().IndexField(ctx, &corev1.ConfigMap{}, "type", func(obj client.Object) []string {
+					return []string{obj.GetLabels()["type"]}
+				})
 				Expect(err).NotTo(HaveOccurred())
-			}()
+			})
+		})
+
+		By("Starting the provider, cluster, manager, and controller", func() {
 			g.Go(func() error {
 				return ignoreCanceled(provider.Run(ctx, mgr))
 			})
-
-			By("Starting cluster")
 			g.Go(func() error {
 				return ignoreCanceled(cl.Start(ctx))
 			})
-
-			By("Starting cluster-aware manager")
 			g.Go(func() error {
 				return ignoreCanceled(mgr.Start(ctx))
 			})
+		})
+	})
 
-			err = cli.Create(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "zoo", Name: "tiger", Labels: map[string]string{"type": "animal"}}})
+	BeforeAll(func() {
+		runtime.Must(client.IgnoreAlreadyExists(cli.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "zoo"}})))
+		runtime.Must(client.IgnoreAlreadyExists(cli.Create(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "zoo", Name: "elephant", Labels: map[string]string{"type": "animal"}}})))
+		runtime.Must(client.IgnoreAlreadyExists(cli.Create(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "zoo", Name: "lion", Labels: map[string]string{"type": "animal"}}})))
+		runtime.Must(client.IgnoreAlreadyExists(cli.Create(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "zoo", Name: "keeper", Labels: map[string]string{"type": "human"}}})))
+
+		runtime.Must(client.IgnoreAlreadyExists(cli.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "jungle"}})))
+		runtime.Must(client.IgnoreAlreadyExists(cli.Create(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "jungle", Name: "monkey", Labels: map[string]string{"type": "animal"}}})))
+		runtime.Must(client.IgnoreAlreadyExists(cli.Create(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "jungle", Name: "tree", Labels: map[string]string{"type": "thing"}}})))
+		runtime.Must(client.IgnoreAlreadyExists(cli.Create(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "jungle", Name: "tarzan", Labels: map[string]string{"type": "human"}}})))
+
+		runtime.Must(client.IgnoreAlreadyExists(cli.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "island"}})))
+		runtime.Must(client.IgnoreAlreadyExists(cli.Create(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "island", Name: "bird", Labels: map[string]string{"type": "animal"}}})))
+		runtime.Must(client.IgnoreAlreadyExists(cli.Create(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "island", Name: "stone", Labels: map[string]string{"type": "thing"}}})))
+		runtime.Must(client.IgnoreAlreadyExists(cli.Create(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "island", Name: "crusoe", Labels: map[string]string{"type": "human"}}})))
+	})
+
+	It("runs the reconciler for existing objects", func(ctx context.Context) {
+		Eventually(func() string {
+			lion := &corev1.ConfigMap{}
+			err := cli.Get(ctx, client.ObjectKey{Namespace: "zoo", Name: "lion"}, lion)
 			Expect(err).NotTo(HaveOccurred())
+			return lion.Data["stomach"]
+		}, "10s").Should(Equal("food"))
+	})
 
-			Eventually(func() string {
-				cm := &corev1.ConfigMap{}
-				err := cli.Get(ctx, client.ObjectKey{Namespace: "zoo", Name: "tiger"}, cm)
-				Expect(err).NotTo(HaveOccurred())
-				return cm.Data["stomach"]
-			}, "10s").Should(Equal("food"))
+	It("runs the reconciler for new objects", func(ctx context.Context) {
+		By("Creating a new configmap", func() {
+			err := cli.Create(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "zoo", Name: "tiger", Labels: map[string]string{"type": "animal"}}})
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		Eventually(func() string {
+			tiger := &corev1.ConfigMap{}
+			err := cli.Get(ctx, client.ObjectKey{Namespace: "zoo", Name: "tiger"}, tiger)
+			Expect(err).NotTo(HaveOccurred())
+			return tiger.Data["stomach"]
+		}, "10s").Should(Equal("food"))
+	})
+
+	It("runs the reconciler for updated objects", func(ctx context.Context) {
+		updated := &corev1.ConfigMap{}
+		By("Emptying the elephant's stomach", func() {
+			err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+				if err := cli.Get(ctx, client.ObjectKey{Namespace: "zoo", Name: "elephant"}, updated); err != nil {
+					return err
+				}
+				updated.Data = map[string]string{}
+				return cli.Update(ctx, updated)
+			})
+			Expect(err).NotTo(HaveOccurred())
+		})
+		rv, err := strconv.ParseInt(updated.ResourceVersion, 10, 64)
+		Expect(err).NotTo(HaveOccurred())
+
+		Eventually(func() int64 {
+			elephant := &corev1.ConfigMap{}
+			err := cli.Get(ctx, client.ObjectKey{Namespace: "zoo", Name: "elephant"}, elephant)
+			Expect(err).NotTo(HaveOccurred())
+			rv, err := strconv.ParseInt(elephant.ResourceVersion, 10, 64)
+			Expect(err).NotTo(HaveOccurred())
+			return rv
+		}, "10s").Should(BeNumerically(">=", rv))
+
+		Eventually(func() string {
+			elephant := &corev1.ConfigMap{}
+			err := cli.Get(ctx, client.ObjectKey{Namespace: "zoo", Name: "elephant"}, elephant)
+			Expect(err).NotTo(HaveOccurred())
+			return elephant.Data["stomach"]
+		}, "10s").Should(Equal("food"))
+	})
+
+	It("queries one cluster via a multi-cluster index", func() {
+		island, err := mgr.GetCluster(ctx, "island")
+		Expect(err).NotTo(HaveOccurred())
+
+		cms := &corev1.ConfigMapList{}
+		err = island.GetCache().List(ctx, cms, client.MatchingFields{"type": "human"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cms.Items).To(HaveLen(1))
+		Expect(cms.Items[0].Name).To(Equal("crusoe"))
+		Expect(cms.Items[0].Namespace).To(Equal("default"))
+	})
+
+	It("queries one cluster via a multi-cluster index with a namespace", func() {
+		island, err := mgr.GetCluster(ctx, "island")
+		Expect(err).NotTo(HaveOccurred())
+
+		cms := &corev1.ConfigMapList{}
+		err = island.GetCache().List(ctx, cms, client.InNamespace("default"), client.MatchingFields{"type": "human"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cms.Items).To(HaveLen(1))
+		Expect(cms.Items[0].Name).To(Equal("crusoe"))
+		Expect(cms.Items[0].Namespace).To(Equal("default"))
+	})
+
+	It("queries all clusters via a multi-cluster index", func() {
+		cms := &corev1.ConfigMapList{}
+		err := cl.GetCache().List(ctx, cms, client.MatchingFields{"type": "human"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cms.Items).To(HaveLen(3))
+		names := sets.NewString()
+		for _, cm := range cms.Items {
+			names.Insert(cm.Name)
+		}
+		Expect(names).To(Equal(sets.NewString("keeper", "tarzan", "crusoe")))
+	})
+
+	It("queries all clusters via a multi-cluster index with a namespace", func() {
+		cms := &corev1.ConfigMapList{}
+		err := cl.GetCache().List(ctx, cms, client.InNamespace("island"), client.MatchingFields{"type": "human"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cms.Items).To(HaveLen(1))
+		Expect(cms.Items[0].Name).To(Equal("crusoe"))
+		Expect(cms.Items[0].Namespace).To(Equal("island"))
+	})
+
+	AfterAll(func() {
+		By("Stopping the provider, cluster, manager, and controller", func() {
+			cancel()
+		})
+		By("Waiting for the error group to finish", func() {
+			err := g.Wait()
+			Expect(err).NotTo(HaveOccurred())
 		})
 	})
 })

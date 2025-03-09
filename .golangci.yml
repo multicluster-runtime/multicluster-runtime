@@ -12,6 +12,7 @@ linters:
     - errchkjson
     - errorlint
     - exhaustive
+    - gci
     - ginkgolinter
     - goconst
     - gocritic
@@ -45,6 +46,17 @@ linters-settings:
     disable:
       - fieldalignment
       - shadow
+  gci:
+    custom-order: true
+    skip-generated: true
+    sections:
+    - standard
+    - default
+    - prefix(k8s.io)
+    - prefix(sigs.k8s.io/controller-runtime)
+    - prefix(github.com/multicluster-runtime)
+    - blank
+    - dot
   importas:
     no-unaliased: true
     alias:

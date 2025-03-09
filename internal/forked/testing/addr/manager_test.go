@@ -20,10 +20,10 @@ import (
 	"net"
 	"strconv"
 
+	"github.com/multicluster-runtime/multicluster-runtime/internal/forked/testing/addr"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-
-	"github.com/multicluster-runtime/multicluster-runtime/internal/forked/testing/addr"
 )
 
 var _ = Describe("SuggestAddress", func() {
