@@ -9,8 +9,8 @@ replace github.com/multicluster-runtime/multicluster-runtime => ../..
 replace github.com/multicluster-runtime/multicluster-runtime/providers/cluster-api => ../../providers/cluster-api
 
 require (
-	github.com/multicluster-runtime/multicluster-runtime v0.20.0-alpha.3
-	github.com/multicluster-runtime/multicluster-runtime/providers/cluster-api v0.20.0-alpha.3
+	github.com/multicluster-runtime/multicluster-runtime v0.20.0-alpha.5
+	github.com/multicluster-runtime/multicluster-runtime/providers/cluster-api v0.20.0-alpha.5
 	golang.org/x/sync v0.10.0
 	k8s.io/api v0.32.2
 	k8s.io/apimachinery v0.32.2
