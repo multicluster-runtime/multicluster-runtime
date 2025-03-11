@@ -1,4 +1,4 @@
-module github.com/multicluster-runtime/multicluster-runtime/providers/fleet
+module github.com/multicluster-runtime/multicluster-runtime/providers/kind
 
 go 1.23.0
 
