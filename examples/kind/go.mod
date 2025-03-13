@@ -1,4 +1,4 @@
-module github.com/multicluster-runtime/multicluster-runtime/examples/fleet
+module github.com/multicluster-runtime/multicluster-runtime/examples/kind
 
 go 1.23.0
 

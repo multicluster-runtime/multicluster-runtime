@@ -1,10 +1,8 @@
-module github.com/multicluster-runtime/multicluster-runtime/providers/clsuter-api
+module github.com/multicluster-runtime/multicluster-runtime/providers/cluster-api
 
 go 1.23.4
 
 replace github.com/multicluster-runtime/multicluster-runtime => ../..
-
-replace github.com/multicluster-runtime/multicluster-runtime/providers/cluster-api => ../../providers/cluster-api
 
 require (
 	github.com/go-logr/logr v1.4.2

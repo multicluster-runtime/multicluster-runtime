@@ -1,4 +1,4 @@
-module github.com/multicluster-runtime/multicluster-runtime/examples/fleet
+module github.com/multicluster-runtime/multicluster-runtime/examples/cluster-api
 
 go 1.23.4
 
