@@ -45,7 +45,10 @@ func New(name string, cl cluster.Cluster) *Provider {
 }
 
 // Run starts the provider and blocks.
-func (p *Provider) Run(ctx context.Context, _ mcmanager.Manager) error {
+func (p *Provider) Run(ctx context.Context, mgr mcmanager.Manager) error {
+	if err := mgr.Engage(ctx, p.name, p.cl); err != nil {
+		return err
+	}
 	<-ctx.Done()
 	return nil
 }
