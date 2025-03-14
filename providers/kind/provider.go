@@ -152,15 +152,13 @@ func (p *Provider) Run(ctx context.Context, mgr mcmanager.Manager) error {
 			p.log.Info("Added new cluster", "cluster", clusterName)
 
 			// engage manager
-			if mgr != nil {
-				if err := mgr.Engage(clusterCtx, clusterName, cl); err != nil {
-					log.Error(err, "failed to engage manager")
-					p.lock.Lock()
-					delete(p.clusters, clusterName)
-					delete(p.cancelFns, clusterName)
-					p.lock.Unlock()
-					return false, nil
-				}
+			if err := mgr.Engage(clusterCtx, clusterName, cl); err != nil {
+				log.Error(err, "failed to engage manager")
+				p.lock.Lock()
+				delete(p.clusters, clusterName)
+				delete(p.cancelFns, clusterName)
+				p.lock.Unlock()
+				return false, nil
 			}
 		}
 
