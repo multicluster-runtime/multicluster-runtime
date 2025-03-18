@@ -1,4 +1,4 @@
-module github.com/multicluster-runtime/multicluster-runtime
+module sigs.k8s.io/multicluster-runtime
 
 go 1.23.0
 

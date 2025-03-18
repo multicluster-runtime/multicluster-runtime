@@ -54,7 +54,7 @@ linters-settings:
     - default
     - prefix(k8s.io)
     - prefix(sigs.k8s.io/controller-runtime)
-    - prefix(github.com/multicluster-runtime)
+    - prefix(sigs.k8s.io/multicluster-runtime)
     - blank
     - dot
   importas:

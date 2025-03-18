@@ -1,16 +1,16 @@
-module github.com/multicluster-runtime/multicluster-runtime/providers/fleet
+module sigs.k8s.io/multicluster-runtime/providers/fleet
 
 go 1.23.0
 
-replace github.com/multicluster-runtime/multicluster-runtime => ../..
+replace sigs.k8s.io/multicluster-runtime => ../..
 
 require (
 	github.com/go-logr/logr v1.4.2
-	github.com/multicluster-runtime/multicluster-runtime v0.20.0-alpha.5
 	k8s.io/apimachinery v0.32.1
 	k8s.io/client-go v0.32.1
 	sigs.k8s.io/controller-runtime v0.20.1
 	sigs.k8s.io/kind v0.26.0
+	sigs.k8s.io/multicluster-runtime v0.20.0-alpha.5
 )
 
 require (

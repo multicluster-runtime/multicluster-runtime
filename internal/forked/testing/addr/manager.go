@@ -26,7 +26,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/multicluster-runtime/multicluster-runtime/internal/forked/testing/flock"
+	"sigs.k8s.io/multicluster-runtime/internal/forked/testing/flock"
 )
 
 // TODO(directxman12): interface / release functionality for external port managers

@@ -44,11 +44,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	mccontroller "github.com/multicluster-runtime/multicluster-runtime/pkg/controller"
-	mchandler "github.com/multicluster-runtime/multicluster-runtime/pkg/handler"
-	mcmanager "github.com/multicluster-runtime/multicluster-runtime/pkg/manager"
-	mcreconcile "github.com/multicluster-runtime/multicluster-runtime/pkg/reconcile"
-	mcsource "github.com/multicluster-runtime/multicluster-runtime/pkg/source"
+	mccontroller "sigs.k8s.io/multicluster-runtime/pkg/controller"
+	mchandler "sigs.k8s.io/multicluster-runtime/pkg/handler"
+	mcmanager "sigs.k8s.io/multicluster-runtime/pkg/manager"
+	mcreconcile "sigs.k8s.io/multicluster-runtime/pkg/reconcile"
+	mcsource "sigs.k8s.io/multicluster-runtime/pkg/source"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -194,7 +194,7 @@ var _ = Describe("application", func() {
 				For(&appsv1.ReplicaSet{}).
 				Named("last_controller").
 				Build(typedNoop)
-			Expect(err).To(MatchError(ContainSubstring("For() can only be used with mcreconcile.Request, got reconcile.WithCluster[github.com/multicluster-runtime/multicluster-runtime/pkg/builder.empty]")))
+			Expect(err).To(MatchError(ContainSubstring("For() can only be used with mcreconcile.Request, got reconcile.WithCluster[sigs.k8s.io/multicluster-runtime/pkg/builder.empty]")))
 			Expect(instance).To(BeNil())
 		})
 

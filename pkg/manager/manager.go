@@ -32,8 +32,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
-	mccontext "github.com/multicluster-runtime/multicluster-runtime/pkg/context"
-	"github.com/multicluster-runtime/multicluster-runtime/pkg/multicluster"
+	mccontext "sigs.k8s.io/multicluster-runtime/pkg/context"
+	"sigs.k8s.io/multicluster-runtime/pkg/multicluster"
 )
 
 // LocalCluster is the name of the local cluster.
