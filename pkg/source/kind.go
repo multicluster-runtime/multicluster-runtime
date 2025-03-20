@@ -22,8 +22,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	mchandler "github.com/multicluster-runtime/multicluster-runtime/pkg/handler"
-	mcreconcile "github.com/multicluster-runtime/multicluster-runtime/pkg/reconcile"
+	mchandler "sigs.k8s.io/multicluster-runtime/pkg/handler"
+	mcreconcile "sigs.k8s.io/multicluster-runtime/pkg/reconcile"
 )
 
 // Kind creates a KindSource with the given cache provider.

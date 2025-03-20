@@ -1,22 +1,22 @@
-module github.com/multicluster-runtime/multicluster-runtime/examples/fleet
+module sigs.k8s.io/multicluster-runtime/examples/fleet
 
 go 1.23.4
 
 toolchain go1.24.0
 
-replace github.com/multicluster-runtime/multicluster-runtime => ../..
+replace sigs.k8s.io/multicluster-runtime => ../..
 
-replace github.com/multicluster-runtime/multicluster-runtime/providers/cluster-api => ../../providers/cluster-api
+replace sigs.k8s.io/multicluster-runtime/providers/cluster-api => ../../providers/cluster-api
 
 require (
-	github.com/multicluster-runtime/multicluster-runtime v0.20.0-alpha.5
-	github.com/multicluster-runtime/multicluster-runtime/providers/cluster-api v0.20.0-alpha.5
 	golang.org/x/sync v0.10.0
 	k8s.io/api v0.32.2
 	k8s.io/apimachinery v0.32.2
 	k8s.io/client-go v0.32.2
 	sigs.k8s.io/cluster-api v1.9.4
 	sigs.k8s.io/controller-runtime v0.20.2
+	sigs.k8s.io/multicluster-runtime v0.20.0-alpha.5
+	sigs.k8s.io/multicluster-runtime/providers/cluster-api v0.20.0-alpha.5
 )
 
 require (

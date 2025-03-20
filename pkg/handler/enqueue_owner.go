@@ -21,7 +21,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 
-	mcreconcile "github.com/multicluster-runtime/multicluster-runtime/pkg/reconcile"
+	mcreconcile "sigs.k8s.io/multicluster-runtime/pkg/reconcile"
 )
 
 // EnqueueRequestForOwner wraps handler.EnqueueRequestForOwner to be compatible

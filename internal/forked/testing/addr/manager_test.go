@@ -20,7 +20,7 @@ import (
 	"net"
 	"strconv"
 
-	"github.com/multicluster-runtime/multicluster-runtime/internal/forked/testing/addr"
+	"sigs.k8s.io/multicluster-runtime/internal/forked/testing/addr"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
