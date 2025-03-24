@@ -1,10 +1,10 @@
-module sigs.k8s.io/multicluster-runtime/providers/clsuter-api
+module sigs.k8s.io/multicluster-runtime/providers/cluster-api
 
-go 1.23.4
+go 1.23.0
 
-replace sigs.k8s.io/multicluster-runtime => ../..
-
-replace sigs.k8s.io/multicluster-runtime/providers/cluster-api => ../../providers/cluster-api
+replace (
+	sigs.k8s.io/multicluster-runtime => ../..
+)
 
 require (
 	github.com/go-logr/logr v1.4.2
