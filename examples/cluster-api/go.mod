@@ -1,12 +1,11 @@
-module sigs.k8s.io/multicluster-runtime/examples/fleet
+module sigs.k8s.io/multicluster-runtime/examples/cluster-api
 
-go 1.23.4
+go 1.23.0
 
-toolchain go1.24.0
-
-replace sigs.k8s.io/multicluster-runtime => ../..
-
-replace sigs.k8s.io/multicluster-runtime/providers/cluster-api => ../../providers/cluster-api
+replace (
+	sigs.k8s.io/multicluster-runtime => ../..
+	sigs.k8s.io/multicluster-runtime/providers/cluster-api => ../../providers/cluster-api
+)
 
 require (
 	golang.org/x/sync v0.10.0

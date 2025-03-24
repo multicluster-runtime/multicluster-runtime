@@ -1,10 +1,11 @@
-module sigs.k8s.io/multicluster-runtime/examples/fleet
+module sigs.k8s.io/multicluster-runtime/examples/kind
 
 go 1.23.0
 
-replace sigs.k8s.io/multicluster-runtime => ../..
-
-replace sigs.k8s.io/multicluster-runtime/providers/kind => ../../providers/kind
+replace (
+	sigs.k8s.io/multicluster-runtime => ../..
+	sigs.k8s.io/multicluster-runtime/providers/kind => ../../providers/kind
+)
 
 require (
 	golang.org/x/sync v0.8.0

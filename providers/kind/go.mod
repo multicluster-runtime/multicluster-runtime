@@ -1,4 +1,4 @@
-module sigs.k8s.io/multicluster-runtime/providers/fleet
+module sigs.k8s.io/multicluster-runtime/providers/kind
 
 go 1.23.0
 
