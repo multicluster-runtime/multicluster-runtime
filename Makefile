@@ -27,7 +27,7 @@ SHELL:=/usr/bin/env bash
 #
 # Go.
 #
-GO_VERSION ?= 1.23.4
+GO_VERSION ?= 1.23.7
 
 # Use GOPROXY environment variable if set
 GOPROXY := $(shell go env GOPROXY)
@@ -138,6 +138,8 @@ modules: ## Runs go mod to ensure modules are up to date.
 	cd $(TOOLS_DIR); go mod tidy
 	cd $(EXAMPLES_KIND_DIR); go mod tidy
 	cd $(PROVIDERS_KIND_DIR); go mod tidy
+	cd $(EXAMPLES_CLUSTER_API_DIR); go mod tidy
+	cd $(PROVIDERS_CLUSTER_API_DIR); go mod tidy
 
 ## --------------------------------------
 ## Cleanup / Verification
