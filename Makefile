@@ -138,6 +138,8 @@ modules: ## Runs go mod to ensure modules are up to date.
 	cd $(TOOLS_DIR); go mod tidy
 	cd $(EXAMPLES_KIND_DIR); go mod tidy
 	cd $(PROVIDERS_KIND_DIR); go mod tidy
+	cd $(EXAMPLES_CLUSTER_API_DIR); go mod tidy
+	cd $(PROVIDERS_CLUSTER_API_DIR); go mod tidy
 
 ## --------------------------------------
 ## Cleanup / Verification
