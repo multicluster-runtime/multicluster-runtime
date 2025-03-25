@@ -199,14 +199,21 @@ func (m *mcManager) Add(r Runnable) (err error) {
 // Engage gets called when the component should start operations for the given
 // Cluster. ctx is cancelled when the cluster is disengaged.
 func (m *mcManager) Engage(ctx context.Context, name string, cl cluster.Cluster) error {
-	ctx, cancel := context.WithCancel(ctx) //nolint:govet // cancel is called in the error case only.
+	ctx, cancel := context.WithCancel(ctx)
+
+	// Create a goroutine that will clean up the cancel function when the parent context is done
+	go func() {
+		<-ctx.Done()
+		cancel()
+	}()
+
 	for _, r := range m.mcRunnables {
 		if err := r.Engage(ctx, name, cl); err != nil {
 			cancel()
 			return fmt.Errorf("failed to engage cluster %q: %w", name, err)
 		}
 	}
-	return nil //nolint:govet // cancel is called in the error case only.
+	return nil
 }
 
 func (m *mcManager) GetManager(ctx context.Context, clusterName string) (manager.Manager, error) {
