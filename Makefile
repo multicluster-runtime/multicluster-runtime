@@ -178,6 +178,15 @@ verify-apidiff: $(GO_APIDIFF) ## Check for API differences
 	$(GO_APIDIFF) $(APIDIFF_OLD_COMMIT) --print-compatible
 
 ## --------------------------------------
+## Release Tooling
+## --------------------------------------
+
+
+.PHONY: provider-release
+provider-release: ## Create a commit bumping the provider modules to the latest release tag and tag providers.
+	@./hack/release-providers.sh
+
+## --------------------------------------
 ## Helpers
 ## --------------------------------------
 
