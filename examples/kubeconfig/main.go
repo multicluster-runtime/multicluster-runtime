@@ -17,14 +17,12 @@ limitations under the License.
 package main
 
 import (
-	"context"
-	"errors"
 	"flag"
 	"os"
-	"time"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
+	"k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -41,24 +39,13 @@ import (
 
 func main() {
 	var namespace string
-	var kubeconfigLabel string
-	var connectionTimeout time.Duration
-	var cacheSyncTimeout time.Duration
-	var kubeconfigPath string
-	var providerReadyTimeout time.Duration
+	var kubeconfigSecretLabel string
+	var kubeconfigSecretKey string
 
-	flag.StringVar(&namespace, "namespace", "default", "Namespace where kubeconfig secrets are stored")
-	flag.StringVar(&kubeconfigLabel, "kubeconfig-label", "sigs.k8s.io/multicluster-runtime-kubeconfig",
+	flag.StringVar(&namespace, "namespace", "my-operator-namespace", "Namespace where kubeconfig secrets are stored")
+	flag.StringVar(&kubeconfigSecretLabel, "kubeconfig-label", "sigs.k8s.io/multicluster-runtime-kubeconfig",
 		"Label used to identify secrets containing kubeconfig data")
-	flag.DurationVar(&connectionTimeout, "connection-timeout", 15*time.Second,
-		"Timeout for connecting to a cluster")
-	flag.DurationVar(&cacheSyncTimeout, "cache-sync-timeout", 60*time.Second,
-		"Timeout for waiting for the cache to sync")
-	flag.StringVar(&kubeconfigPath, "kubeconfig-path", "",
-		"Path to kubeconfig file for test secrets (defaults to ~/.kube/config if not set)")
-	flag.DurationVar(&providerReadyTimeout, "provider-ready-timeout", 120*time.Second,
-		"Timeout for waiting for the provider to be ready")
-
+	flag.StringVar(&kubeconfigSecretKey, "kubeconfig-key", "kubeconfig", "Key in the secret data that contains the kubeconfig")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -69,15 +56,13 @@ func main() {
 	entryLog := ctrllog.Log.WithName("entrypoint")
 	ctx := ctrl.SetupSignalHandler()
 
-	entryLog.Info("Starting application", "namespace", namespace, "kubeconfigLabel", kubeconfigLabel)
+	entryLog.Info("Starting application", "namespace", namespace, "kubeconfigSecretLabel", kubeconfigSecretLabel)
 
 	// Create the kubeconfig provider with options
 	providerOpts := kubeconfigprovider.Options{
-		Namespace:         namespace,
-		KubeconfigLabel:   kubeconfigLabel,
-		ConnectionTimeout: connectionTimeout,
-		CacheSyncTimeout:  cacheSyncTimeout,
-		KubeconfigPath:    kubeconfigPath,
+		Namespace:             namespace,
+		KubeconfigSecretLabel: kubeconfigSecretLabel,
+		KubeconfigSecretKey:   kubeconfigSecretKey,
 	}
 
 	// Create the provider first, then the manager with the provider
@@ -90,7 +75,9 @@ func main() {
 	// Modify manager options to avoid waiting for cache sync
 	managerOpts := manager.Options{
 		// Don't block main thread on leader election
-		LeaderElection:          false,
+		LeaderElection: false,
+		// Add the scheme
+		Scheme: scheme.Scheme,
 	}
 
 	mgr, err := mcmanager.New(ctrl.GetConfigOrDie(), provider, managerOpts)
@@ -102,7 +89,7 @@ func main() {
 	// Add our controllers
 	entryLog.Info("Adding controllers")
 
-	// TODO: Run your controllers here <--------------------------------
+	// Run your controllers here <--------------------------------
 	podWatcher := controllers.NewPodWatcher(mgr)
 	if err := mgr.Add(podWatcher); err != nil {
 		entryLog.Error(err, "Unable to add pod watcher")
@@ -118,29 +105,10 @@ func main() {
 		}
 	}()
 
-	// Wait for the provider to be ready with a short timeout
-	entryLog.Info("Waiting for provider to be ready")
-	readyCtx, cancel := context.WithTimeout(ctx, providerReadyTimeout)
-	defer cancel()
-
-	select {
-	case <-provider.IsReady():
-		entryLog.Info("Provider is ready")
-	case <-readyCtx.Done():
-		entryLog.Error(readyCtx.Err(), "Timeout waiting for provider to be ready, continuing anyway")
-	}
-
 	// Start the manager
 	entryLog.Info("Starting manager")
 	if err := mgr.Start(ctx); err != nil {
 		entryLog.Error(err, "Error running manager")
 		os.Exit(1)
 	}
-}
-
-func ignoreCanceled(err error) error {
-	if errors.Is(err, context.Canceled) {
-		return nil
-	}
-	return err
 }
