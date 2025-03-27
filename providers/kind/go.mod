@@ -10,7 +10,7 @@ require (
 	k8s.io/client-go v0.32.1
 	sigs.k8s.io/controller-runtime v0.20.4
 	sigs.k8s.io/kind v0.26.0
-	sigs.k8s.io/multicluster-runtime v0.20.0-alpha.5
+	sigs.k8s.io/multicluster-runtime v0.20.4-alpha.6
 )
 
 require (
