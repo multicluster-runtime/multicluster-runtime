@@ -12,8 +12,8 @@ require (
 	k8s.io/api v0.32.1
 	k8s.io/apimachinery v0.32.1
 	sigs.k8s.io/controller-runtime v0.20.4
-	sigs.k8s.io/multicluster-runtime v0.20.0-alpha.5
-	sigs.k8s.io/multicluster-runtime/providers/kind v0.20.0-alpha.5
+	sigs.k8s.io/multicluster-runtime v0.20.4-alpha.6
+	sigs.k8s.io/multicluster-runtime/providers/kind v0.20.4-alpha.6
 )
 
 require (
